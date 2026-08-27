@@ -1821,8 +1821,24 @@ export default function App() {
             )}
           </main>
 
-          <footer style={{ borderTop: "1px solid " + PALETTE.border, padding: "28px 20px", textAlign: "center", color: PALETTE.muted, fontSize: 12 }}>
+          <footer style={{ borderTop: "1px solid " + PALETTE.border, padding: "28px 20px 40px", textAlign: "center", color: PALETTE.muted, fontSize: 12, position: "relative" }}>
             Moldeq · Catálogo oficial de produtos 3D · Pedidos via WhatsApp
+            <span
+              onClick={() => setView("admin")}
+              title=""
+              style={{
+                position: "absolute",
+                right: 16,
+                bottom: 6,
+                fontSize: 9,
+                color: "rgba(146,151,163,0.35)",
+                cursor: "pointer",
+                userSelect: "none",
+                letterSpacing: "0.02em",
+              }}
+            >
+              v1.0.3
+            </span>
           </footer>
 
           <CartDrawer
