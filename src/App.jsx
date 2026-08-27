@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList } from "lucide-react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, DEFAULT_WHATSAPP, ADMIN_PIN, STORAGE_KEY } from "./data";
+import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
 
 function formatBRL(v) {
   return "R$ " + Number(v).toFixed(2).replace(".", ",");
@@ -233,6 +233,103 @@ function navArrowStyle(side) {
     color: "#fff",
     cursor: "pointer",
   };
+}
+
+function BannerCarousel({ banners }) {
+  const active = (banners || []).filter((b) => b.active);
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (active.length <= 1) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % active.length), 6000);
+    return () => clearInterval(t);
+  }, [active.length]);
+
+  if (active.length === 0) return null;
+  const safeIdx = Math.min(idx, active.length - 1);
+  const b = active[safeIdx];
+
+  function scrollToCatalog() {
+    const el = document.getElementById("catalogo");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  }
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "20px auto 0", padding: "0 20px" }}>
+      <div style={{ position: "relative", borderRadius: 16, overflow: "hidden", aspectRatio: "21/8", background: PALETTE.surface, border: "1px solid " + PALETTE.border }}>
+        <img src={b.image} alt={b.title || ""} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "linear-gradient(90deg, rgba(15,17,22,0.85) 20%, rgba(15,17,22,0.25) 65%, transparent)",
+          }}
+        />
+        <div style={{ position: "absolute", left: "5%", top: "50%", transform: "translateY(-50%)", maxWidth: "55%" }}>
+          {b.title && (
+            <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(18px, 3vw, 32px)", color: PALETTE.text, lineHeight: 1.15 }}>
+              {b.title}
+            </h2>
+          )}
+          {b.subtitle && <p style={{ margin: "8px 0 0", color: PALETTE.text, opacity: 0.85, fontSize: "clamp(12px, 1.4vw, 15px)" }}>{b.subtitle}</p>}
+          {b.ctaText &&
+            (b.ctaLink ? (
+              <a
+                href={b.ctaLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-block",
+                  marginTop: 14,
+                  textDecoration: "none",
+                  background: "linear-gradient(135deg," + PALETTE.gold + "," + PALETTE.goldBright + ")",
+                  color: "#1A1204",
+                  fontWeight: 700,
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  fontSize: 13,
+                }}
+              >
+                {b.ctaText}
+              </a>
+            ) : (
+              <button
+                onClick={scrollToCatalog}
+                style={{
+                  marginTop: 14,
+                  border: "none",
+                  cursor: "pointer",
+                  background: "linear-gradient(135deg," + PALETTE.gold + "," + PALETTE.goldBright + ")",
+                  color: "#1A1204",
+                  fontWeight: 700,
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  fontSize: 13,
+                }}
+              >
+                {b.ctaText}
+              </button>
+            ))}
+        </div>
+
+        {active.length > 1 && (
+          <>
+            <button type="button" onClick={() => setIdx((i) => (i - 1 + active.length) % active.length)} style={navArrowStyle("left")}>
+              <ChevronLeft size={18} />
+            </button>
+            <button type="button" onClick={() => setIdx((i) => (i + 1) % active.length)} style={navArrowStyle("right")}>
+              <ChevronRight size={18} />
+            </button>
+            <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 6 }}>
+              {active.map((_, i) => (
+                <span key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: i === safeIdx ? PALETTE.goldBright : "rgba(255,255,255,0.4)" }} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ProductCard({ product, onAddToCart, toast }) {
@@ -1112,7 +1209,174 @@ function AdminStockSales({ products, setProducts, sales, setSales }) {
   );
 }
 
-function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSales, onExit }) {
+function AdminBanners({ banners, setBanners }) {
+  const [editingId, setEditingId] = useState(null);
+  const fileInputRefs = useRef({});
+
+  function addBanner() {
+    const blank = {
+      id: uid(),
+      image: LOGO_URI,
+      title: "Novo banner",
+      subtitle: "Descrição curta da promoção",
+      ctaText: "Ver catálogo",
+      ctaLink: "",
+      active: true,
+    };
+    setBanners((prev) => [blank, ...prev]);
+    setEditingId(blank.id);
+  }
+
+  function updateBanner(id, field, value) {
+    setBanners((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
+  }
+
+  function deleteBanner(id) {
+    if (!window.confirm("Excluir este banner?")) return;
+    setBanners((prev) => prev.filter((b) => b.id !== id));
+    setEditingId(null);
+  }
+
+  function moveBanner(id, dir) {
+    setBanners((prev) => {
+      const idx = prev.findIndex((b) => b.id === id);
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.splice(newIdx, 0, item);
+      return next;
+    });
+  }
+
+  async function handleImage(id, e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const uri = await fileToDataUri(file);
+    updateBanner(id, "image", uri);
+    e.target.value = "";
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Megaphone size={16} color={PALETTE.gold} />
+          <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Banners da página inicial</h3>
+        </div>
+        <button
+          onClick={addBanner}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+        >
+          <Plus size={14} /> Novo banner
+        </button>
+      </div>
+
+      {banners.length === 0 && <p style={{ fontSize: 13, color: PALETTE.muted }}>Nenhum banner cadastrado ainda. Clique em "Novo banner" para criar o primeiro.</p>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {banners.map((b, idx) =>
+          editingId === b.id ? (
+            <div key={b.id} style={{ background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <img src={b.image} alt="" style={{ width: 140, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid " + PALETTE.border }} />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRefs.current[b.id] && fileInputRefs.current[b.id].click()}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.text, borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: "pointer" }}
+                  >
+                    <ImageIcon size={13} /> Trocar imagem
+                  </button>
+                  <input ref={(el) => (fileInputRefs.current[b.id] = el)} type="file" accept="image/*" onChange={(e) => handleImage(b.id, e)} style={{ display: "none" }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label style={{ fontSize: 12, color: PALETTE.muted }}>
+                    Título
+                    <input
+                      value={b.title}
+                      onChange={(e) => updateBanner(b.id, "title", e.target.value)}
+                      style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+                    />
+                  </label>
+                  <label style={{ fontSize: 12, color: PALETTE.muted }}>
+                    Subtítulo
+                    <input
+                      value={b.subtitle}
+                      onChange={(e) => updateBanner(b.id, "subtitle", e.target.value)}
+                      style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
+                    />
+                  </label>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <label style={{ fontSize: 12, color: PALETTE.muted, flex: 1, minWidth: 140 }}>
+                      Texto do botão
+                      <input
+                        value={b.ctaText}
+                        onChange={(e) => updateBanner(b.id, "ctaText", e.target.value)}
+                        style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
+                      />
+                    </label>
+                    <label style={{ fontSize: 12, color: PALETTE.muted, flex: 1, minWidth: 140 }}>
+                      Link do botão (opcional)
+                      <input
+                        value={b.ctaLink}
+                        onChange={(e) => updateBanner(b.id, "ctaLink", e.target.value)}
+                        placeholder="deixe em branco p/ rolar até o catálogo"
+                        style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
+                      />
+                    </label>
+                  </div>
+                  <label style={{ fontSize: 12, color: PALETTE.muted, display: "flex", alignItems: "center", gap: 6 }}>
+                    <input type="checkbox" checked={b.active} onChange={(e) => updateBanner(b.id, "active", e.target.checked)} />
+                    Ativo (visível na loja)
+                  </label>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+                <button
+                  onClick={() => deleteBanner(b.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.danger, color: PALETTE.danger, borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}
+                >
+                  <Trash2 size={14} /> Excluir
+                </button>
+                <button
+                  onClick={() => setEditingId(null)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                >
+                  <Check size={14} /> Concluir
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 14, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 12, opacity: b.active ? 1 : 0.55 }}>
+              <img src={b.image} alt="" style={{ width: 64, height: 40, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, color: PALETTE.text, fontWeight: 600 }}>{b.title}</div>
+                <div style={{ fontSize: 12, color: PALETTE.muted, marginTop: 2 }}>{b.active ? "ativo" : "inativo"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => moveBanner(b.id, -1)} disabled={idx === 0} style={{ background: "transparent", border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.muted, cursor: "pointer", padding: 4 }}>
+                  <ChevronUp size={14} />
+                </button>
+                <button onClick={() => moveBanner(b.id, 1)} disabled={idx === banners.length - 1} style={{ background: "transparent", border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.muted, cursor: "pointer", padding: 4 }}>
+                  <ChevronDown size={14} />
+                </button>
+              </div>
+              <button
+                onClick={() => setEditingId(b.id)}
+                style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.text, borderRadius: 8, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}
+              >
+                <Pencil size={13} /> Editar
+              </button>
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSales, banners, setBanners, onExit }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1235,6 +1499,24 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
         >
           <TrendingUp size={14} /> Estoque & Vendas
         </button>
+        <button
+          onClick={() => setTab("banners")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "transparent",
+            border: "none",
+            borderBottom: tab === "banners" ? "2px solid " + PALETTE.gold : "2px solid transparent",
+            color: tab === "banners" ? PALETTE.text : PALETTE.muted,
+            padding: "10px 6px",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <Megaphone size={14} /> Banners
+        </button>
       </div>
 
       {tab === "products" ? (
@@ -1298,8 +1580,10 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
             )}
           </div>
         </>
-      ) : (
+      ) : tab === "stock" ? (
         <AdminStockSales products={products} setProducts={setProducts} sales={sales} setSales={setSales} />
+      ) : (
+        <AdminBanners banners={banners} setBanners={setBanners} />
       )}
     </div>
   );
@@ -1333,6 +1617,7 @@ export default function App() {
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
   const [whatsapp, setWhatsapp] = useState(DEFAULT_WHATSAPP);
   const [sales, setSales] = useState([]);
+  const [banners, setBanners] = useState(INITIAL_BANNERS);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("shop");
   const [cart, setCart] = useState([]);
@@ -1343,6 +1628,15 @@ export default function App() {
   const toastTimer = useRef(null);
 
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("acesso") === ADMIN_ACCESS_KEY) {
+        setView("admin");
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
     (async () => {
       try {
         const { data, error } = await supabase.from("moldeq_catalog").select("data").eq("id", STORAGE_KEY).maybeSingle();
@@ -1351,8 +1645,9 @@ export default function App() {
           setProducts(data.data.products || INITIAL_PRODUCTS);
           setWhatsapp(data.data.whatsapp || DEFAULT_WHATSAPP);
           setSales(data.data.sales || []);
+          setBanners(data.data.banners || INITIAL_BANNERS);
         } else {
-          await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [] } });
+          await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [], banners: INITIAL_BANNERS } });
         }
       } catch (e) {
         console.error("Erro ao carregar catálogo do Supabase:", e);
@@ -1367,13 +1662,13 @@ export default function App() {
       try {
         const { error } = await supabase
           .from("moldeq_catalog")
-          .upsert({ id: STORAGE_KEY, data: { products, whatsapp, sales }, updated_at: new Date().toISOString() });
+          .upsert({ id: STORAGE_KEY, data: { products, whatsapp, sales, banners }, updated_at: new Date().toISOString() });
         if (error) throw error;
       } catch (e) {
         console.error("Erro ao salvar catálogo no Supabase:", e);
       }
     })();
-  }, [products, whatsapp, sales, loading]);
+  }, [products, whatsapp, sales, banners, loading]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -1465,15 +1760,6 @@ export default function App() {
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {view === "shop" ? (
-              <button
-                onClick={() => setView("admin")}
-                title="Área do vendedor"
-                style={{ background: "transparent", border: "1px solid " + PALETTE.border, borderRadius: 8, padding: "8px 10px", color: PALETTE.muted, cursor: "pointer", display: "flex", alignItems: "center" }}
-              >
-                <Lock size={15} />
-              </button>
-            ) : null}
             {view === "shop" && (
               <button
                 onClick={() => setCartOpen(true)}
@@ -1504,6 +1790,7 @@ export default function App() {
 
       {view === "shop" ? (
         <>
+          <BannerCarousel banners={banners} />
           <section style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 20px 30px", textAlign: "center" }}>
             <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: PALETTE.gold, marginBottom: 14 }}>
               Impressão 3D sob encomenda
@@ -1522,7 +1809,7 @@ export default function App() {
             <LayerLines height={22} opacity={0.55} />
           </div>
 
-          <main style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 20px 100px" }}>
+          <main id="catalogo" style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 20px 100px" }}>
             {visibleProducts.length === 0 ? (
               <p style={{ textAlign: "center", color: PALETTE.muted, marginTop: 60 }}>Nenhum produto encontrado para "{search}".</p>
             ) : (
@@ -1595,7 +1882,7 @@ export default function App() {
           )}
         </>
       ) : (
-        <AdminPanel products={products} setProducts={setProducts} whatsapp={whatsapp} setWhatsapp={setWhatsapp} sales={sales} setSales={setSales} onExit={() => setView("shop")} />
+        <AdminPanel products={products} setProducts={setProducts} whatsapp={whatsapp} setWhatsapp={setWhatsapp} sales={sales} setSales={setSales} banners={banners} setBanners={setBanners} onExit={() => setView("shop")} />
       )}
 
       <Toast message={toastMsg} />
