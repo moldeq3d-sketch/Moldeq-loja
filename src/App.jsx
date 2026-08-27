@@ -172,7 +172,19 @@ function MediaViewer({ gallery, height = "auto" }) {
           <video src={item.url} controls style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", background: "#000" }} />
         )
       ) : (
-        <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <img
+          src={item.url}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            display: "block",
+            padding: "6%",
+            boxSizing: "border-box",
+            background: PALETTE.surface,
+          }}
+        />
       )}
 
       {gallery.length > 1 && (
@@ -364,7 +376,7 @@ function ProductCard({ product, onAddToCart, toast }) {
       }}
     >
       <LayerLines height={10} opacity={0.5} />
-      <div style={{ position: "relative", aspectRatio: "4/3", background: "#0C0D11" }}>
+      <div style={{ position: "relative", aspectRatio: "4/3", background: PALETTE.surface }}>
         <MediaViewer gallery={gallery} />
         {outOfStock && (
           <div
