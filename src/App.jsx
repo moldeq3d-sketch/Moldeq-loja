@@ -402,44 +402,58 @@ function ProductCard({ product, onAddToCart, toast }) {
       </div>
       <div style={{ padding: "16px 16px 18px", display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
         <div>
-          <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 17, fontWeight: 600, color: PALETTE.text }}>
+          <h3
+            style={{
+              margin: 0,
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 16,
+              fontWeight: 600,
+              color: PALETTE.text,
+              lineHeight: 1.3,
+              minHeight: 42,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
             {product.name}
           </h3>
-          <p style={{ margin: "6px 0 0", fontSize: 13, color: PALETTE.muted, lineHeight: 1.45 }}>{product.description}</p>
+          <p
+            style={{
+              margin: "6px 0 0",
+              fontSize: 13,
+              color: PALETTE.muted,
+              lineHeight: 1.45,
+              minHeight: 38,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {product.description}
+          </p>
         </div>
 
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: PALETTE.goldBright }}>
+        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 19, fontWeight: 700, color: PALETTE.goldBright, minHeight: 24 }}>
           {product.priceFrom ? "a partir de " : ""}
           {formatBRL(product.price)}
         </div>
 
-        {hasColors && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            {product.colors.map((c) => (
-              <ColorSwatch
-                key={c.name}
-                color={c}
-                selected={colorName === c.name}
-                disabled={c.stock <= 0}
-                onClick={() => setColorName(c.name)}
-              />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: hasColors ? 26 : 0 }}>
+          {hasColors &&
+            product.colors.map((c) => (
+              <ColorSwatch key={c.name} color={c} selected={colorName === c.name} disabled={c.stock <= 0} onClick={() => setColorName(c.name)} />
             ))}
-          </div>
-        )}
+        </div>
 
-        {hasSizes && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            {product.sizes.map((s) => (
-              <SizeButton
-                key={s.name}
-                size={s}
-                selected={sizeName === s.name}
-                disabled={s.stock <= 0}
-                onClick={() => setSizeName(s.name)}
-              />
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minHeight: hasSizes ? 26 : 0 }}>
+          {hasSizes &&
+            product.sizes.map((s) => (
+              <SizeButton key={s.name} size={s} selected={sizeName === s.name} disabled={s.stock <= 0} onClick={() => setSizeName(s.name)} />
             ))}
-          </div>
-        )}
+        </div>
 
         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 10, paddingTop: 4 }}>
           <div
