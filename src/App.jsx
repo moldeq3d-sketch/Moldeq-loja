@@ -43,7 +43,73 @@ function fileToDataUri(file) {
   });
 }
 
-function compressImageFile(file, maxDim = 1100, quality = 0.8) {
+const STORAGE_BUCKET = "product-images";
+
+function dataUriToBlob(dataUri) {
+  const [header, base64] = dataUri.split(",");
+  const mimeMatch = header.match(/data:(.*?);base64/);
+  const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function uploadBlobToStorage(blob, folder) {
+  const path = folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function uploadDataUriToStorage(dataUri, folder) {
+  return uploadBlobToStorage(dataUriToBlob(dataUri), folder);
+}
+
+// Standard product photo format: square canvas (1:1), fixed pixel size.
+// The photo is scaled to fit fully inside the square (nothing gets cropped) and
+// centered on a white background, matching a consistent catalog look. The result
+// is uploaded to Supabase Storage and only the (small) public URL is kept in the
+// catalog data, so the site stays fast and light even with 50+ products.
+const PRODUCT_PHOTO_SIZE = 1200;
+
+function compressSquareImageBlob(file, targetSize = PRODUCT_PHOTO_SIZE, quality = 0.88) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, targetSize, targetSize);
+        const scale = Math.min(targetSize / img.width, targetSize / img.height);
+        const drawWidth = img.width * scale;
+        const drawHeight = img.height * scale;
+        const dx = (targetSize - drawWidth) / 2;
+        const dy = (targetSize - drawHeight) / 2;
+        ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("Falha ao gerar imagem"));
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressWideImageBlob(file, maxDim = 1600, quality = 0.85) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
@@ -65,10 +131,15 @@ function compressImageFile(file, maxDim = 1100, quality = 0.8) {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("Falha ao gerar imagem"));
+          },
+          "image/jpeg",
+          quality
+        );
       };
       img.src = reader.result;
     };
@@ -76,37 +147,95 @@ function compressImageFile(file, maxDim = 1100, quality = 0.8) {
   });
 }
 
-// Standard product photo format: square canvas (1:1), fixed pixel size.
-// The photo is scaled to fit fully inside the square (nothing gets cropped) and
-// centered on a white background, matching a consistent catalog look.
-const PRODUCT_PHOTO_SIZE = 1200;
+async function compressAndUploadProductPhoto(file) {
+  const blob = await compressSquareImageBlob(file);
+  return uploadBlobToStorage(blob, "products");
+}
 
-function compressSquareImage(file, targetSize = PRODUCT_PHOTO_SIZE, quality = 0.85) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = reject;
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = reject;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = targetSize;
-        canvas.height = targetSize;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, targetSize, targetSize);
-        const scale = Math.min(targetSize / img.width, targetSize / img.height);
-        const drawWidth = img.width * scale;
-        const drawHeight = img.height * scale;
-        const dx = (targetSize - drawWidth) / 2;
-        const dy = (targetSize - drawHeight) / 2;
-        ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
+async function compressAndUploadColorPhoto(file) {
+  const blob = await compressSquareImageBlob(file);
+  return uploadBlobToStorage(blob, "colors");
+}
+
+async function compressAndUploadBannerPhoto(file) {
+  const blob = await compressWideImageBlob(file);
+  return uploadBlobToStorage(blob, "banners");
+}
+
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const current = cursor++;
+      results[current] = await fn(items[current], current);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
+// One-time migration: older photos saved directly as base64 (before Storage was
+// added) get uploaded to Supabase Storage in the background, replacing the huge
+// embedded text with a small URL. Anything that fails is left untouched so no
+// photo is ever lost.
+async function migrateBase64ToStorage(products, banners) {
+  async function migrateProduct(p) {
+    const newMedia = [];
+    for (const m of p.media || []) {
+      if (m.type === "image" && typeof m.url === "string" && m.url.startsWith("data:")) {
+        try {
+          const url = await uploadDataUriToStorage(m.url, "products");
+          newMedia.push({ ...m, url });
+        } catch (e) {
+          newMedia.push(m);
+        }
+      } else {
+        newMedia.push(m);
+      }
+    }
+    const newColors = [];
+    for (const c of p.colors || []) {
+      if (c.image && typeof c.image === "string" && c.image.startsWith("data:")) {
+        try {
+          const url = await uploadDataUriToStorage(c.image, "colors");
+          newColors.push({ ...c, image: url });
+        } catch (e) {
+          newColors.push(c);
+        }
+      } else {
+        newColors.push(c);
+      }
+    }
+    return { ...p, media: newMedia, colors: newColors };
+  }
+
+  const newProducts = await mapWithConcurrency(products, 4, migrateProduct);
+
+  const newBanners = [];
+  for (const b of banners) {
+    if (b.image && typeof b.image === "string" && b.image.startsWith("data:")) {
+      try {
+        const url = await uploadDataUriToStorage(b.image, "banners");
+        newBanners.push({ ...b, image: url });
+      } catch (e) {
+        newBanners.push(b);
+      }
+    } else {
+      newBanners.push(b);
+    }
+  }
+
+  return { products: newProducts, banners: newBanners };
+}
+
+function hasLegacyBase64Images(products, banners) {
+  const inProducts = (products || []).some(
+    (p) => (p.media || []).some((m) => typeof m.url === "string" && m.url.startsWith("data:")) || (p.colors || []).some((c) => c.image && String(c.image).startsWith("data:"))
+  );
+  const inBanners = (banners || []).some((b) => b.image && String(b.image).startsWith("data:"));
+  return inProducts || inBanners;
 }
 
 function isVideoUrl(url) {
@@ -1039,10 +1168,15 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
     if (files.length === 0) return;
     setUploading(true);
     try {
-      const uris = await Promise.all(files.map((f) => compressSquareImage(f)));
-      setForm((f) => ({ ...f, media: [...f.media, ...uris.map((u) => ({ type: "image", url: u }))] }));
+      const urls = [];
+      for (const f of files) {
+        const url = await compressAndUploadProductPhoto(f);
+        urls.push(url);
+      }
+      setForm((f) => ({ ...f, media: [...f.media, ...urls.map((u) => ({ type: "image", url: u }))] }));
     } catch (err) {
-      alert("Não consegui processar uma das fotos. Tente outra imagem.");
+      console.error(err);
+      alert("Não consegui enviar uma das fotos. Verifique sua internet e tente de novo.");
     }
     setUploading(false);
     e.target.value = "";
@@ -1085,10 +1219,11 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
     if (!file) return;
     setUploading(true);
     try {
-      const uri = await compressSquareImage(file);
-      updateColor(idx, "image", uri);
+      const url = await compressAndUploadColorPhoto(file);
+      updateColor(idx, "image", url);
     } catch (err) {
-      alert("Não consegui processar essa foto. Tente outra imagem.");
+      console.error(err);
+      alert("Não consegui enviar essa foto. Verifique sua internet e tente de novo.");
     }
     setUploading(false);
     e.target.value = "";
@@ -1627,6 +1762,7 @@ function AdminStockSales({ products, setProducts, sales, setSales }) {
 function AdminBanners({ banners, setBanners }) {
   const [editingId, setEditingId] = useState(null);
   const fileInputRefs = useRef({});
+  const [uploadingId, setUploadingId] = useState(null);
 
   function addBanner() {
     const blank = {
@@ -1667,12 +1803,15 @@ function AdminBanners({ banners, setBanners }) {
   async function handleImage(id, e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    setUploadingId(id);
     try {
-      const uri = await compressImageFile(file, 1600, 0.8);
-      updateBanner(id, "image", uri);
+      const url = await compressAndUploadBannerPhoto(file);
+      updateBanner(id, "image", url);
     } catch (err) {
-      alert("Não consegui processar essa imagem. Tente outra foto.");
+      console.error(err);
+      alert("Não consegui enviar essa imagem. Verifique sua internet e tente de novo.");
     }
+    setUploadingId(null);
     e.target.value = "";
   }
 
@@ -1702,10 +1841,11 @@ function AdminBanners({ banners, setBanners }) {
                   <img src={b.image} alt="" style={{ width: 140, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid " + PALETTE.border }} />
                   <button
                     type="button"
+                    disabled={uploadingId === b.id}
                     onClick={() => fileInputRefs.current[b.id] && fileInputRefs.current[b.id].click()}
-                    style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.text, borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: "pointer" }}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.text, borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: uploadingId === b.id ? "wait" : "pointer" }}
                   >
-                    <ImageIcon size={13} /> Trocar imagem
+                    <ImageIcon size={13} /> {uploadingId === b.id ? "Enviando..." : "Trocar imagem"}
                   </button>
                   <input ref={(el) => (fileInputRefs.current[b.id] = el)} type="file" accept="image/*" onChange={(e) => handleImage(b.id, e)} style={{ display: "none" }} />
                 </div>
@@ -2175,6 +2315,7 @@ export default function App() {
   const [benefits, setBenefits] = useState(INITIAL_BENEFITS);
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [migrating, setMigrating] = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
   const [saveErrorDetail, setSaveErrorDetail] = useState("");
   const [view, setView] = useState("shop");
@@ -2200,11 +2341,26 @@ export default function App() {
         const { data, error } = await supabase.from("moldeq_catalog").select("data").eq("id", STORAGE_KEY).maybeSingle();
         if (error) throw error;
         if (data && data.data) {
-          setProducts(data.data.products || INITIAL_PRODUCTS);
+          let loadedProducts = data.data.products || INITIAL_PRODUCTS;
+          let loadedBanners = data.data.banners || INITIAL_BANNERS;
           setWhatsapp(data.data.whatsapp || DEFAULT_WHATSAPP);
           setSales(data.data.sales || []);
-          setBanners(data.data.banners || INITIAL_BANNERS);
           setBenefits(data.data.benefits || INITIAL_BENEFITS);
+
+          if (hasLegacyBase64Images(loadedProducts, loadedBanners)) {
+            setMigrating(true);
+            try {
+              const migrated = await migrateBase64ToStorage(loadedProducts, loadedBanners);
+              loadedProducts = migrated.products;
+              loadedBanners = migrated.banners;
+            } catch (migErr) {
+              console.error("Erro ao migrar fotos para o Storage:", migErr);
+            }
+            setMigrating(false);
+          }
+
+          setProducts(loadedProducts);
+          setBanners(loadedBanners);
         } else {
           await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [], banners: INITIAL_BANNERS, benefits: INITIAL_BENEFITS } });
         }
@@ -2240,9 +2396,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || migrating) return;
     persistCatalog();
-  }, [products, whatsapp, sales, banners, benefits, loading]);
+  }, [products, whatsapp, sales, banners, benefits, loading, migrating]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -2312,11 +2468,13 @@ export default function App() {
     backgroundAttachment: "scroll, fixed",
   };
 
-  if (loading) {
+  if (loading || migrating) {
     return (
-      <div style={{ minHeight: "100vh", ...pageBackground, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", ...pageBackground, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
         {fontImport}
-        <span style={{ color: PALETTE.muted, fontFamily: "Inter, sans-serif" }}>Carregando catálogo…</span>
+        <span style={{ color: PALETTE.muted, fontFamily: "Inter, sans-serif", textAlign: "center", maxWidth: 320, fontSize: 14 }}>
+          {migrating ? "Otimizando fotos existentes para carregar mais rápido — isso acontece só uma vez, pode levar um instante…" : "Carregando catálogo…"}
+        </span>
       </div>
     );
   }
