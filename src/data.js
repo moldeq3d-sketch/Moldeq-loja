@@ -9,6 +9,16 @@ export const INITIAL_BANNERS = [];
 
 export const INITIAL_BENEFITS = [{"id": "b1", "icon": "truck", "text": "Envio para todo o Brasil", "active": true}, {"id": "b2", "icon": "shield", "text": "Combinamos tudo direto com você", "active": true}, {"id": "b3", "icon": "message", "text": "Atendimento rápido pelo WhatsApp", "active": true}, {"id": "b4", "icon": "award", "text": "Impressão 3D de alta qualidade", "active": true}];
 
+export const INITIAL_PRICING_SETTINGS = {
+  filamentPricePerKg: 120,
+  energyPricePerKwh: 0.85,
+  printerWattage: 200,
+  toolsCostPerHour: 1.5,
+  laborHourlyRate: 25,
+  failureRatePercent: 10,
+  marginPercent: 100,
+};
+
 export const DEFAULT_WHATSAPP = "5511999999999";
 export const ADMIN_PIN = "2461";
 export const ADMIN_ACCESS_KEY = "camada-oculta-7x";

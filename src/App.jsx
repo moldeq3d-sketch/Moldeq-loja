@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock } from "lucide-react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
+import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
 
 function formatBRL(v) {
   return "R$ " + Number(v).toFixed(2).replace(".", ",");
@@ -2002,7 +2002,320 @@ function AdminBenefits({ benefits, setBenefits }) {
   );
 }
 
-function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSales, banners, setBanners, benefits, setBenefits, saveStatus, saveErrorDetail, onRetrySave, onExit }) {
+function AdminPricingCalculator({ products, setProducts, pricingSettings, setPricingSettings }) {
+  const [settingsDraft, setSettingsDraft] = useState(pricingSettings);
+  const [weight, setWeight] = useState(50);
+  const [printHours, setPrintHours] = useState(3);
+  const [laborMinutes, setLaborMinutes] = useState(15);
+  const [quantity, setQuantity] = useState(1);
+  const [customMargin, setCustomMargin] = useState(null);
+  const [applyProductId, setApplyProductId] = useState(products[0] ? products[0].id : "");
+  const [applyMsg, setApplyMsg] = useState("");
+
+  function updateSetting(field, value) {
+    setSettingsDraft((s) => ({ ...s, [field]: Math.max(0, Number(value) || 0) }));
+  }
+
+  function saveSettings() {
+    setPricingSettings(settingsDraft);
+  }
+
+  const margin = customMargin !== null ? customMargin : settingsDraft.marginPercent;
+
+  const filamentCost = (weight / 1000) * settingsDraft.filamentPricePerKg;
+  const energyCost = (settingsDraft.printerWattage / 1000) * printHours * settingsDraft.energyPricePerKwh;
+  const toolsCost = settingsDraft.toolsCostPerHour * printHours;
+  const laborCost = (laborMinutes / 60) * settingsDraft.laborHourlyRate;
+  const baseSubtotal = filamentCost + energyCost + toolsCost + laborCost;
+  const failureReserve = baseSubtotal * (settingsDraft.failureRatePercent / 100);
+  const totalCost = baseSubtotal + failureReserve;
+  const salePrice = totalCost * (1 + margin / 100);
+  const profit = salePrice - totalCost;
+  const qty = Math.max(1, Number(quantity) || 1);
+
+  function applyToProduct() {
+    if (!applyProductId) return;
+    setProducts((prev) => prev.map((p) => (p.id === applyProductId ? { ...p, price: Math.round(salePrice * 100) / 100 } : p)));
+    const p = products.find((pr) => pr.id === applyProductId);
+    setApplyMsg("Preço de " + formatBRL(salePrice) + " aplicado a \"" + (p ? p.name : "") + "\".");
+    setTimeout(() => setApplyMsg(""), 3500);
+  }
+
+  const row = { display: "flex", justifyContent: "space-between", fontSize: 13, color: PALETTE.muted, padding: "6px 0" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Calculator size={16} color={PALETTE.gold} />
+          <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Custos fixos do seu negócio</h3>
+        </div>
+        <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 0, marginBottom: 14 }}>
+          Preencha uma vez — esses valores ficam salvos e são usados em todo cálculo de preço.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Preço do filamento (R$/kg)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={settingsDraft.filamentPricePerKg}
+              onChange={(e) => updateSetting("filamentPricePerKg", e.target.value)}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Energia (R$/kWh)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={settingsDraft.energyPricePerKwh}
+              onChange={(e) => updateSetting("energyPricePerKwh", e.target.value)}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Potência da impressora (W)
+            <input
+              type="number"
+              min="0"
+              value={settingsDraft.printerWattage}
+              onChange={(e) => updateSetting("printerWattage", e.target.value)}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Utensílios/desgaste (R$/hora)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={settingsDraft.toolsCostPerHour}
+              onChange={(e) => updateSetting("toolsCostPerHour", e.target.value)}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Sua hora de trabalho (R$/h)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={settingsDraft.laborHourlyRate}
+              onChange={(e) => updateSetting("laborHourlyRate", e.target.value)}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Reserva para falhas (%)
+            <input
+              type="number"
+              min="0"
+              value={settingsDraft.failureRatePercent}
+              onChange={(e) => updateSetting("failureRatePercent", e.target.value)}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Margem de lucro padrão (%)
+            <input
+              type="number"
+              min="0"
+              value={settingsDraft.marginPercent}
+              onChange={(e) => updateSetting("marginPercent", e.target.value)}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+        </div>
+        <button
+          onClick={saveSettings}
+          style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+        >
+          <Check size={14} /> Salvar configurações
+        </button>
+      </div>
+
+      <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18 }}>
+        <h3 style={{ margin: "0 0 14px", fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Dados desta peça</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Peso da peça (gramas)
+            <input
+              type="number"
+              min="0"
+              value={weight}
+              onChange={(e) => setWeight(Math.max(0, Number(e.target.value) || 0))}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Tempo de impressão (horas)
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={printHours}
+              onChange={(e) => setPrintHours(Math.max(0, Number(e.target.value) || 0))}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Mão de obra (minutos)
+            <input
+              type="number"
+              min="0"
+              value={laborMinutes}
+              onChange={(e) => setLaborMinutes(Math.max(0, Number(e.target.value) || 0))}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Quantidade (lote)
+            <input
+              type="number"
+              min="1"
+              value={quantity}
+              onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Margem só para esta peça (%, opcional)
+            <input
+              type="number"
+              min="0"
+              placeholder={String(settingsDraft.marginPercent)}
+              value={customMargin === null ? "" : customMargin}
+              onChange={(e) => setCustomMargin(e.target.value === "" ? null : Math.max(0, Number(e.target.value)))}
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+        </div>
+      </div>
+
+      <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.gold, borderRadius: 12, padding: 18 }}>
+        <h3 style={{ margin: "0 0 10px", fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Resultado</h3>
+        <div style={{ borderBottom: "1px solid " + PALETTE.border, paddingBottom: 8, marginBottom: 8 }}>
+          <div style={row}>
+            <span>Filamento</span>
+            <span>{formatBRL(filamentCost)}</span>
+          </div>
+          <div style={row}>
+            <span>Energia</span>
+            <span>{formatBRL(energyCost)}</span>
+          </div>
+          <div style={row}>
+            <span>Utensílios/desgaste</span>
+            <span>{formatBRL(toolsCost)}</span>
+          </div>
+          <div style={row}>
+            <span>Mão de obra</span>
+            <span>{formatBRL(laborCost)}</span>
+          </div>
+          <div style={row}>
+            <span>Reserva para falhas ({settingsDraft.failureRatePercent}%)</span>
+            <span>{formatBRL(failureReserve)}</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: PALETTE.text, marginBottom: 4 }}>
+          <span>Custo total (1 peça)</span>
+          <span style={{ fontWeight: 600 }}>{formatBRL(totalCost)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: PALETTE.text, marginBottom: 14 }}>
+          <span>Margem aplicada</span>
+          <span style={{ fontWeight: 600 }}>{margin}%</span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            background: PALETTE.surface2,
+            borderRadius: 10,
+            padding: "14px 16px",
+            marginBottom: 10,
+          }}
+        >
+          <span style={{ fontSize: 13, color: PALETTE.muted }}>Preço de venda sugerido</span>
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 24, fontWeight: 700, color: PALETTE.goldBright }}>{formatBRL(salePrice)}</span>
+        </div>
+        <div style={row}>
+          <span>Lucro por peça</span>
+          <span style={{ color: PALETTE.gold, fontWeight: 600 }}>{formatBRL(profit)}</span>
+        </div>
+        {qty > 1 && (
+          <>
+            <div style={{ borderTop: "1px dashed " + PALETTE.border, marginTop: 10, paddingTop: 10 }}>
+              <div style={row}>
+                <span>Preço do lote ({qty} peças)</span>
+                <span style={{ color: PALETTE.text, fontWeight: 600 }}>{formatBRL(salePrice * qty)}</span>
+              </div>
+              <div style={row}>
+                <span>Lucro do lote</span>
+                <span style={{ color: PALETTE.gold, fontWeight: 600 }}>{formatBRL(profit * qty)}</span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {products.length > 0 && (
+        <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18 }}>
+          <h3 style={{ margin: "0 0 12px", fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Aplicar este preço a um produto</h3>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <select
+              value={applyProductId}
+              onChange={(e) => setApplyProductId(e.target.value)}
+              style={{ background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, minWidth: 220 }}
+            >
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} (atual: {formatBRL(p.price)})
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={applyToProduct}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+            >
+              <Check size={14} /> Usar {formatBRL(salePrice)} neste produto
+            </button>
+          </div>
+          {applyMsg && <p style={{ fontSize: 12, color: PALETTE.gold, marginTop: 10 }}>{applyMsg}</p>}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, fontSize: 11, color: PALETTE.muted, background: "rgba(217,164,76,0.06)", border: "1px solid " + PALETTE.border, borderRadius: 10, padding: 14 }}>
+        <Info size={26} color={PALETTE.gold} style={{ flexShrink: 0 }} />
+        <span>
+          Fórmula baseada nas práticas mais comuns entre makers e prestadores de impressão 3D no Brasil: material + energia + desgaste/utensílios + mão de obra + reserva para falhas, tudo multiplicado
+          pela margem de lucro desejada. Ajuste os valores fixos conforme sua realidade — eles variam bastante por região e tipo de impressora.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({
+  products,
+  setProducts,
+  whatsapp,
+  setWhatsapp,
+  sales,
+  setSales,
+  banners,
+  setBanners,
+  benefits,
+  setBenefits,
+  pricingSettings,
+  setPricingSettings,
+  saveStatus,
+  saveErrorDetail,
+  onRetrySave,
+  onExit,
+}) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -2208,6 +2521,24 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
         >
           <Megaphone size={14} /> Vitrine
         </button>
+        <button
+          onClick={() => setTab("pricing")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "transparent",
+            border: "none",
+            borderBottom: tab === "pricing" ? "2px solid " + PALETTE.gold : "2px solid transparent",
+            color: tab === "pricing" ? PALETTE.text : PALETTE.muted,
+            padding: "10px 6px",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <Calculator size={14} /> Precificação
+        </button>
       </div>
 
       {tab === "products" ? (
@@ -2273,11 +2604,13 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
         </>
       ) : tab === "stock" ? (
         <AdminStockSales products={products} setProducts={setProducts} sales={sales} setSales={setSales} />
-      ) : (
+      ) : tab === "banners" ? (
         <>
           <AdminBanners banners={banners} setBanners={setBanners} />
           <AdminBenefits benefits={benefits} setBenefits={setBenefits} />
         </>
+      ) : (
+        <AdminPricingCalculator products={products} setProducts={setProducts} pricingSettings={pricingSettings} setPricingSettings={setPricingSettings} />
       )}
     </div>
   );
@@ -2313,6 +2646,7 @@ export default function App() {
   const [sales, setSales] = useState([]);
   const [banners, setBanners] = useState(INITIAL_BANNERS);
   const [benefits, setBenefits] = useState(INITIAL_BENEFITS);
+  const [pricingSettings, setPricingSettings] = useState(INITIAL_PRICING_SETTINGS);
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
@@ -2346,6 +2680,7 @@ export default function App() {
           setWhatsapp(data.data.whatsapp || DEFAULT_WHATSAPP);
           setSales(data.data.sales || []);
           setBenefits(data.data.benefits || INITIAL_BENEFITS);
+          setPricingSettings({ ...INITIAL_PRICING_SETTINGS, ...(data.data.pricingSettings || {}) });
 
           if (hasLegacyBase64Images(loadedProducts, loadedBanners)) {
             setMigrating(true);
@@ -2362,7 +2697,10 @@ export default function App() {
           setProducts(loadedProducts);
           setBanners(loadedBanners);
         } else {
-          await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [], banners: INITIAL_BANNERS, benefits: INITIAL_BENEFITS } });
+          await supabase.from("moldeq_catalog").upsert({
+            id: STORAGE_KEY,
+            data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [], banners: INITIAL_BANNERS, benefits: INITIAL_BENEFITS, pricingSettings: INITIAL_PRICING_SETTINGS },
+          });
         }
       } catch (e) {
         console.error("Erro ao carregar catálogo do Supabase:", e);
@@ -2372,7 +2710,7 @@ export default function App() {
   }, []);
 
   async function persistCatalog() {
-    const payload = { products, whatsapp, sales, banners, benefits };
+    const payload = { products, whatsapp, sales, banners, benefits, pricingSettings };
     const json = JSON.stringify(payload);
     if (json.length > 4_500_000) {
       const sizeMB = (json.length / (1024 * 1024)).toFixed(1);
@@ -2398,7 +2736,7 @@ export default function App() {
   useEffect(() => {
     if (loading || migrating) return;
     persistCatalog();
-  }, [products, whatsapp, sales, banners, benefits, loading, migrating]);
+  }, [products, whatsapp, sales, banners, benefits, pricingSettings, loading, migrating]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -2549,6 +2887,8 @@ export default function App() {
           setBanners={setBanners}
           benefits={benefits}
           setBenefits={setBenefits}
+          pricingSettings={pricingSettings}
+          setPricingSettings={setPricingSettings}
           saveStatus={saveStatus}
           saveErrorDetail={saveErrorDetail}
           onRetrySave={persistCatalog}
