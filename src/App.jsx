@@ -43,6 +43,72 @@ function fileToDataUri(file) {
   });
 }
 
+function compressImageFile(file, maxDim = 1100, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Standard product photo format: square canvas (1:1), fixed pixel size.
+// The photo is scaled to fit fully inside the square (nothing gets cropped) and
+// centered on a white background, matching a consistent catalog look.
+const PRODUCT_PHOTO_SIZE = 1200;
+
+function compressSquareImage(file, targetSize = PRODUCT_PHOTO_SIZE, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, targetSize, targetSize);
+        const scale = Math.min(targetSize / img.width, targetSize / img.height);
+        const drawWidth = img.width * scale;
+        const drawHeight = img.height * scale;
+        const dx = (targetSize - drawWidth) / 2;
+        const dy = (targetSize - drawHeight) / 2;
+        ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function isVideoUrl(url) {
   if (!url) return false;
   return /\.(mp4|webm|ogg)(\?.*)?$/i.test(url) || url.startsWith("data:video");
@@ -408,7 +474,7 @@ function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
       <LayerLines height={10} opacity={0.5} />
       <div
         onClick={() => onOpenProduct(product.id)}
-        style={{ position: "relative", aspectRatio: "4/3", background: PALETTE.surface, cursor: "pointer" }}
+        style={{ position: "relative", aspectRatio: "1/1", background: PALETTE.surface, cursor: "pointer" }}
       >
         <MediaViewer gallery={gallery} />
         {outOfStock && (
@@ -771,7 +837,7 @@ function ProductRail({ title, products, onOpenProduct }) {
               flexShrink: 0,
             }}
           >
-            <div style={{ aspectRatio: "4/3", background: PALETTE.surface2 }}>
+            <div style={{ aspectRatio: "1/1", background: PALETTE.surface2 }}>
               <img
                 src={(p.media && p.media[0] && p.media[0].url) || (p.images && p.images[0]) || LOGO_URI}
                 alt={p.name}
@@ -930,6 +996,7 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
   const photoInputRef = useRef(null);
   const colorPhotoInputRefs = useRef({});
   const [videoUrlDraft, setVideoUrlDraft] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   function updateField(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -970,14 +1037,25 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
   async function handlePhotosUpload(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    const uris = await Promise.all(files.map(fileToDataUri));
-    setForm((f) => ({ ...f, media: [...f.media, ...uris.map((u) => ({ type: "image", url: u }))] }));
+    setUploading(true);
+    try {
+      const uris = await Promise.all(files.map((f) => compressSquareImage(f)));
+      setForm((f) => ({ ...f, media: [...f.media, ...uris.map((u) => ({ type: "image", url: u }))] }));
+    } catch (err) {
+      alert("Não consegui processar uma das fotos. Tente outra imagem.");
+    }
+    setUploading(false);
     e.target.value = "";
   }
 
   async function handleVideoUpload(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Esse vídeo tem mais de 8MB. Prefira colar um link (YouTube ou .mp4 já hospedado) para não travar o salvamento do catálogo.");
+      e.target.value = "";
+      return;
+    }
     const uri = await fileToDataUri(file);
     setForm((f) => ({ ...f, media: [...f.media, { type: "video", url: uri }] }));
     e.target.value = "";
@@ -1005,8 +1083,14 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
   async function handleColorPhoto(idx, e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const uri = await fileToDataUri(file);
-    updateColor(idx, "image", uri);
+    setUploading(true);
+    try {
+      const uri = await compressSquareImage(file);
+      updateColor(idx, "image", uri);
+    } catch (err) {
+      alert("Não consegui processar essa foto. Tente outra imagem.");
+    }
+    setUploading(false);
     e.target.value = "";
   }
 
@@ -1045,13 +1129,17 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
           ))}
           <button
             type="button"
+            disabled={uploading}
             onClick={() => photoInputRef.current && photoInputRef.current.click()}
-            style={{ width: 84, height: 84, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, background: "transparent", border: "1px dashed " + PALETTE.border, borderRadius: 8, color: PALETTE.muted, cursor: "pointer", fontSize: 11 }}
+            style={{ width: 84, height: 84, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, background: "transparent", border: "1px dashed " + PALETTE.border, borderRadius: 8, color: PALETTE.muted, cursor: uploading ? "wait" : "pointer", fontSize: 11 }}
           >
-            <ImagePlus size={16} /> Fotos
+            <ImagePlus size={16} /> {uploading ? "Otimizando..." : "Fotos"}
           </button>
           <input ref={photoInputRef} type="file" accept="image/*" multiple onChange={handlePhotosUpload} style={{ display: "none" }} />
         </div>
+        <p style={{ fontSize: 11, color: PALETTE.muted, marginTop: 8 }}>
+          As fotos são padronizadas automaticamente para {PRODUCT_PHOTO_SIZE}x{PRODUCT_PHOTO_SIZE}px (quadradas), sem cortar nada da imagem original — isso deixa o catálogo com visual uniforme e carrega mais rápido.
+        </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.text, borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: "pointer" }}>
             <Film size={13} /> Enviar vídeo
@@ -1579,8 +1667,12 @@ function AdminBanners({ banners, setBanners }) {
   async function handleImage(id, e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    const uri = await fileToDataUri(file);
-    updateBanner(id, "image", uri);
+    try {
+      const uri = await compressImageFile(file, 1600, 0.8);
+      updateBanner(id, "image", uri);
+    } catch (err) {
+      alert("Não consegui processar essa imagem. Tente outra foto.");
+    }
     e.target.value = "";
   }
 
@@ -1770,7 +1862,7 @@ function AdminBenefits({ benefits, setBenefits }) {
   );
 }
 
-function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSales, banners, setBanners, benefits, setBenefits, onExit }) {
+function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSales, banners, setBanners, benefits, setBenefits, saveStatus, saveErrorDetail, onRetrySave, onExit }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1888,6 +1980,38 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
           </button>
         </div>
       </div>
+
+      {saveStatus === "error" && (
+        <div
+          style={{
+            background: "rgba(192,57,43,0.12)",
+            border: "1px solid " + PALETTE.danger,
+            borderRadius: 10,
+            padding: "12px 14px",
+            marginBottom: 18,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 13, color: PALETTE.text, flex: 1, minWidth: 220 }}>⚠️ {saveErrorDetail}</span>
+          <button
+            onClick={onRetrySave}
+            style={{ background: PALETTE.danger, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}
+          >
+            Tentar salvar de novo
+          </button>
+        </div>
+      )}
+      {saveStatus === "saving" && (
+        <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>Salvando alterações…</div>
+      )}
+      {saveStatus === "saved" && (
+        <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
+          <Check size={13} color={PALETTE.gold} /> Tudo salvo
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20, borderBottom: "1px solid " + PALETTE.border }}>
         <button
@@ -2051,6 +2175,8 @@ export default function App() {
   const [benefits, setBenefits] = useState(INITIAL_BENEFITS);
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState("idle");
+  const [saveErrorDetail, setSaveErrorDetail] = useState("");
   const [view, setView] = useState("shop");
   const [cart, setCart] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
@@ -2089,18 +2215,33 @@ export default function App() {
     })();
   }, []);
 
+  async function persistCatalog() {
+    const payload = { products, whatsapp, sales, banners, benefits };
+    const json = JSON.stringify(payload);
+    if (json.length > 4_500_000) {
+      const sizeMB = (json.length / (1024 * 1024)).toFixed(1);
+      setSaveStatus("error");
+      setSaveErrorDetail(
+        "O catálogo ficou muito grande (" + sizeMB + "MB) para salvar de uma vez. Alguma foto ou vídeo enviado recentemente pode estar sem compressão — troque por uma imagem menor ou remova o vídeo mais pesado."
+      );
+      return;
+    }
+    setSaveStatus("saving");
+    try {
+      const { error } = await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: payload, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      setSaveStatus("saved");
+      setSaveErrorDetail("");
+    } catch (e) {
+      console.error("Erro ao salvar catálogo no Supabase:", e);
+      setSaveStatus("error");
+      setSaveErrorDetail("Não consegui salvar as últimas alterações (falha de conexão com o banco de dados). Elas ainda não estão seguras — tente novamente antes de sair da página.");
+    }
+  }
+
   useEffect(() => {
     if (loading) return;
-    (async () => {
-      try {
-        const { error } = await supabase
-          .from("moldeq_catalog")
-          .upsert({ id: STORAGE_KEY, data: { products, whatsapp, sales, banners, benefits }, updated_at: new Date().toISOString() });
-        if (error) throw error;
-      } catch (e) {
-        console.error("Erro ao salvar catálogo no Supabase:", e);
-      }
-    })();
+    persistCatalog();
   }, [products, whatsapp, sales, banners, benefits, loading]);
 
   function showToast(msg) {
@@ -2250,6 +2391,9 @@ export default function App() {
           setBanners={setBanners}
           benefits={benefits}
           setBenefits={setBenefits}
+          saveStatus={saveStatus}
+          saveErrorDetail={saveErrorDetail}
+          onRetrySave={persistCatalog}
           onExit={() => setView("shop")}
         />
       ) : (
