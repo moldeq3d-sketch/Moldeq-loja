@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon } from "lucide-react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
+import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
 
 function formatBRL(v) {
   return "R$ " + Number(v).toFixed(2).replace(".", ",");
@@ -344,7 +344,7 @@ function BannerCarousel({ banners }) {
   );
 }
 
-function ProductCard({ product, onAddToCart, toast }) {
+function useProductVariant(product) {
   const availableColors = (product.colors || []).filter((c) => c.stock > 0);
   const [colorName, setColorName] = useState(availableColors[0] ? availableColors[0].name : (product.colors && product.colors[0] ? product.colors[0].name : ""));
   const availableSizes = (product.sizes || []).filter((s) => s.stock > 0);
@@ -364,6 +364,36 @@ function ProductCard({ product, onAddToCart, toast }) {
   const media = product.media && product.media.length > 0 ? product.media : [{ type: "image", url: product.images ? product.images[0] : "" }];
   const gallery = selectedColor && selectedColor.image ? [{ type: "image", url: selectedColor.image }, ...media.filter((m) => m.url !== selectedColor.image)] : media;
 
+  return { colorName, setColorName, sizeName, setSizeName, qty, setQty, selectedColor, selectedSize, hasColors, hasSizes, outOfStock, maxQty, gallery };
+}
+
+function StarRating({ rating = 0, size = 13, count, showCount = true }) {
+  if (!rating || rating <= 0) return null;
+  const stars = [0, 1, 2, 3, 4];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <div style={{ display: "flex", gap: 1 }}>
+        {stars.map((i) => {
+          const fill = Math.max(0, Math.min(1, rating - i));
+          return (
+            <span key={i} style={{ position: "relative", width: size, height: size, display: "inline-block", flexShrink: 0 }}>
+              <Star size={size} color={PALETTE.border} style={{ position: "absolute", top: 0, left: 0 }} />
+              <span style={{ position: "absolute", top: 0, left: 0, width: fill * 100 + "%", height: "100%", overflow: "hidden" }}>
+                <Star size={size} color={PALETTE.gold} fill={PALETTE.gold} style={{ display: "block" }} />
+              </span>
+            </span>
+          );
+        })}
+      </div>
+      {showCount && count > 0 && <span style={{ fontSize: 11, color: PALETTE.muted }}>({count})</span>}
+    </div>
+  );
+}
+
+function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
+  const v = useProductVariant(product);
+  const { colorName, setColorName, sizeName, setSizeName, qty, setQty, hasColors, hasSizes, outOfStock, maxQty, gallery } = v;
+
   return (
     <div
       style={{
@@ -376,7 +406,10 @@ function ProductCard({ product, onAddToCart, toast }) {
       }}
     >
       <LayerLines height={10} opacity={0.5} />
-      <div style={{ position: "relative", aspectRatio: "4/3", background: PALETTE.surface }}>
+      <div
+        onClick={() => onOpenProduct(product.id)}
+        style={{ position: "relative", aspectRatio: "4/3", background: PALETTE.surface, cursor: "pointer" }}
+      >
         <MediaViewer gallery={gallery} />
         {outOfStock && (
           <div
@@ -400,9 +433,10 @@ function ProductCard({ product, onAddToCart, toast }) {
           </div>
         )}
       </div>
-      <div style={{ padding: "16px 16px 18px", display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+      <div style={{ padding: "16px 16px 18px", display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
         <div>
           <h3
+            onClick={() => onOpenProduct(product.id)}
             style={{
               margin: 0,
               fontFamily: "'Space Grotesk', sans-serif",
@@ -415,6 +449,7 @@ function ProductCard({ product, onAddToCart, toast }) {
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
+              cursor: "pointer",
             }}
           >
             {product.name}
@@ -434,6 +469,10 @@ function ProductCard({ product, onAddToCart, toast }) {
           >
             {product.description}
           </p>
+        </div>
+
+        <div style={{ minHeight: 16 }}>
+          <StarRating rating={product.rating} count={product.reviewCount} size={12} />
         </div>
 
         <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 19, fontWeight: 700, color: PALETTE.goldBright, minHeight: 24 }}>
@@ -647,6 +686,237 @@ function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, what
   );
 }
 
+const BENEFIT_ICONS = { truck: Truck, shield: ShieldCheck, message: MessageCircle, award: Award, clock: Clock, package: Package };
+
+function BenefitsStrip({ benefits }) {
+  const active = (benefits || []).filter((b) => b.active !== false && b.text);
+  if (active.length === 0) return null;
+  return (
+    <div style={{ maxWidth: 1100, margin: "18px auto 0", padding: "0 20px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        {active.map((b) => {
+          const Icon = BENEFIT_ICONS[b.icon] || Truck;
+          return (
+            <div
+              key={b.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: PALETTE.surface,
+                border: "1px solid " + PALETTE.border,
+                borderRadius: 12,
+                padding: "12px 14px",
+              }}
+            >
+              <Icon size={18} color={PALETTE.gold} style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 12.5, color: PALETTE.text, lineHeight: 1.3 }}>{b.text}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const railArrowStyle = {
+  background: PALETTE.surface,
+  border: "1px solid " + PALETTE.border,
+  borderRadius: 8,
+  color: PALETTE.text,
+  width: 30,
+  height: 30,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  flexShrink: 0,
+};
+
+function ProductRail({ title, products, onOpenProduct }) {
+  const scrollRef = useRef(null);
+  if (!products || products.length === 0) return null;
+
+  function scrollByAmount(dir) {
+    if (scrollRef.current) scrollRef.current.scrollBy({ left: dir * 220, behavior: "smooth" });
+  }
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, color: PALETTE.text }}>{title}</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => scrollByAmount(-1)} style={railArrowStyle}>
+            <ChevronLeft size={16} />
+          </button>
+          <button onClick={() => scrollByAmount(1)} style={railArrowStyle}>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+      <div ref={scrollRef} style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x mandatory" }}>
+        {products.map((p) => (
+          <div
+            key={p.id}
+            onClick={() => onOpenProduct(p.id)}
+            style={{
+              minWidth: 190,
+              maxWidth: 190,
+              scrollSnapAlign: "start",
+              cursor: "pointer",
+              background: PALETTE.surface,
+              border: "1px solid " + PALETTE.border,
+              borderRadius: 12,
+              overflow: "hidden",
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ aspectRatio: "4/3", background: PALETTE.surface2 }}>
+              <img
+                src={(p.media && p.media[0] && p.media[0].url) || (p.images && p.images[0]) || LOGO_URI}
+                alt={p.name}
+                style={{ width: "100%", height: "100%", objectFit: "contain", padding: "6%", boxSizing: "border-box", display: "block" }}
+              />
+            </div>
+            <div style={{ padding: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: PALETTE.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+              <div style={{ marginTop: 5, minHeight: 14 }}>
+                <StarRating rating={p.rating} count={p.reviewCount} size={11} />
+              </div>
+              <div style={{ marginTop: 5, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: PALETTE.goldBright, fontSize: 15 }}>{formatBRL(p.price)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenProduct, toast }) {
+  const v = useProductVariant(product);
+  const { colorName, setColorName, sizeName, setSizeName, qty, setQty, hasColors, hasSizes, outOfStock, maxQty, gallery } = v;
+  const related = allProducts.filter((p) => p.id !== product.id && p.active).slice(0, 10);
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px 80px" }}>
+      <button
+        onClick={onBack}
+        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", fontSize: 13, marginBottom: 18, padding: 0 }}
+      >
+        <ChevronLeft size={15} /> Voltar ao catálogo
+      </button>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 36 }}>
+        <div>
+          <div style={{ position: "relative", aspectRatio: "1/1", background: PALETTE.surface, borderRadius: 16, overflow: "hidden", border: "1px solid " + PALETTE.border }}>
+            <MediaViewer gallery={gallery} />
+          </div>
+          {gallery.length > 1 && (
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              {gallery.map((m, i) => (
+                <div key={i} style={{ width: 56, height: 56, borderRadius: 8, overflow: "hidden", border: "1px solid " + PALETTE.border, background: PALETTE.surface, flexShrink: 0 }}>
+                  {m.type === "video" ? (
+                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Film size={16} color={PALETTE.gold} />
+                    </div>
+                  ) : (
+                    <img src={m.url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", padding: 4, boxSizing: "border-box" }} />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <h1 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 700, color: PALETTE.text, lineHeight: 1.25 }}>{product.name}</h1>
+          <div style={{ marginTop: 10, minHeight: 18 }}>
+            <StarRating rating={product.rating} count={product.reviewCount} size={15} />
+          </div>
+          <div style={{ marginTop: 14, fontFamily: "'Space Grotesk', sans-serif", fontSize: 28, fontWeight: 700, color: PALETTE.goldBright }}>
+            {product.priceFrom ? "a partir de " : ""}
+            {formatBRL(product.price)}
+          </div>
+          <p style={{ marginTop: 14, fontSize: 14, color: PALETTE.muted, lineHeight: 1.6 }}>{product.description}</p>
+
+          {hasColors && (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 8 }}>
+                Cor: <span style={{ color: PALETTE.text, fontWeight: 600 }}>{colorName}</span>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {product.colors.map((c) => (
+                  <ColorSwatch key={c.name} color={c} selected={colorName === c.name} disabled={c.stock <= 0} onClick={() => setColorName(c.name)} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {hasSizes && (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 8 }}>
+                Tamanho: <span style={{ color: PALETTE.text, fontWeight: 600 }}>{sizeName}</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {product.sizes.map((s) => (
+                  <SizeButton key={s.name} size={s} selected={sizeName === s.name} disabled={s.stock <= 0} onClick={() => setSizeName(s.name)} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 24, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", border: "1px solid " + PALETTE.border, borderRadius: 10, overflow: "hidden" }}>
+              <button
+                onClick={() => setQty((q) => Math.max(1, q - 1))}
+                disabled={outOfStock}
+                style={{ background: "transparent", border: "none", color: PALETTE.text, padding: "10px 14px", cursor: "pointer" }}
+              >
+                <Minus size={15} />
+              </button>
+              <span style={{ minWidth: 26, textAlign: "center", fontSize: 15, color: PALETTE.text }}>{qty}</span>
+              <button
+                onClick={() => setQty((q) => Math.min(maxQty || 1, q + 1))}
+                disabled={outOfStock}
+                style={{ background: "transparent", border: "none", color: PALETTE.text, padding: "10px 14px", cursor: "pointer" }}
+              >
+                <Plus size={15} />
+              </button>
+            </div>
+            <button
+              disabled={outOfStock}
+              onClick={() => {
+                onAddToCart(product.id, colorName, sizeName, qty);
+                toast(product.name + " adicionado ao carrinho");
+              }}
+              style={{
+                flex: 1,
+                minWidth: 200,
+                background: outOfStock ? "rgba(217,164,76,0.15)" : "linear-gradient(135deg," + PALETTE.gold + "," + PALETTE.goldBright + ")",
+                color: outOfStock ? PALETTE.muted : "#1A1204",
+                border: "none",
+                borderRadius: 10,
+                padding: "13px 16px",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: outOfStock ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              <ShoppingCart size={16} /> {outOfStock ? "Indisponível" : "Adicionar ao carrinho"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <ProductRail title="Produtos relacionados" products={related} onOpenProduct={onOpenProduct} />
+    </div>
+  );
+}
+
 function AdminProductForm({ product, onSave, onCancel, onDelete }) {
   const [form, setForm] = useState(() => {
     const base = JSON.parse(JSON.stringify(product));
@@ -836,6 +1106,37 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
             <input type="checkbox" checked={form.active} onChange={(e) => updateField("active", e.target.checked)} />
             Ativo na loja
           </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted, display: "flex", alignItems: "center", gap: 6, marginTop: 20 }}>
+            <input type="checkbox" checked={!!form.featured} onChange={(e) => updateField("featured", e.target.checked)} />
+            Mostrar no carrossel de destaques
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Avaliação (0 a 5)
+            <input
+              type="number"
+              min="0"
+              max="5"
+              step="0.1"
+              value={form.rating || 0}
+              onChange={(e) => updateField("rating", Math.max(0, Math.min(5, Number(e.target.value))))}
+              style={{ display: "block", marginTop: 4, width: 90, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Nº de avaliações
+            <input
+              type="number"
+              min="0"
+              value={form.reviewCount || 0}
+              onChange={(e) => updateField("reviewCount", Math.max(0, Number(e.target.value)))}
+              style={{ display: "block", marginTop: 4, width: 100, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <p style={{ fontSize: 11, color: PALETTE.muted, alignSelf: "flex-end", marginBottom: 8, maxWidth: 260 }}>
+            A avaliação é decorativa (definida por você aqui), já que o site ainda não coleta avaliações reais de clientes.
+          </p>
         </div>
       </div>
 
@@ -1402,7 +1703,74 @@ function AdminBanners({ banners, setBanners }) {
   );
 }
 
-function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSales, banners, setBanners, onExit }) {
+function AdminBenefits({ benefits, setBenefits }) {
+  function updateBenefit(id, field, value) {
+    setBenefits((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
+  }
+
+  function addBenefit() {
+    setBenefits((prev) => [...prev, { id: uid(), icon: "truck", text: "Novo benefício", active: true }]);
+  }
+
+  function removeBenefit(id) {
+    setBenefits((prev) => prev.filter((b) => b.id !== id));
+  }
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <ShieldCheck size={16} color={PALETTE.gold} />
+          <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Faixa de benefícios</h3>
+        </div>
+        <button
+          onClick={addBenefit}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+        >
+          <Plus size={14} /> Novo item
+        </button>
+      </div>
+      <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: -8, marginBottom: 14 }}>Aparece como uma fileira de ícones logo abaixo do banner principal.</p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {benefits.map((b) => {
+          const Icon = BENEFIT_ICONS[b.icon] || Truck;
+          return (
+            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 10, padding: 10, flexWrap: "wrap" }}>
+              <Icon size={18} color={PALETTE.gold} style={{ flexShrink: 0 }} />
+              <select
+                value={b.icon}
+                onChange={(e) => updateBenefit(b.id, "icon", e.target.value)}
+                style={{ background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "6px 8px", fontSize: 12 }}
+              >
+                <option value="truck">Caminhão</option>
+                <option value="shield">Escudo</option>
+                <option value="message">Mensagem</option>
+                <option value="award">Selo</option>
+                <option value="clock">Relógio</option>
+                <option value="package">Caixa</option>
+              </select>
+              <input
+                value={b.text}
+                onChange={(e) => updateBenefit(b.id, "text", e.target.value)}
+                style={{ flex: 1, minWidth: 180, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "7px 10px", fontSize: 13 }}
+              />
+              <label style={{ fontSize: 11, color: PALETTE.muted, display: "flex", alignItems: "center", gap: 5 }}>
+                <input type="checkbox" checked={b.active !== false} onChange={(e) => updateBenefit(b.id, "active", e.target.checked)} />
+                Ativo
+              </label>
+              <button onClick={() => removeBenefit(b.id)} style={{ background: "transparent", border: "none", color: PALETTE.danger, cursor: "pointer" }}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSales, banners, setBanners, benefits, setBenefits, onExit }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1434,6 +1802,32 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
     };
     setProducts((prev) => [blank, ...prev]);
     setEditingId(blank.id);
+  }
+
+  function autoFillShowcase() {
+    const alreadyFeatured = products.filter((p) => p.featured).length;
+    let toFeature = Math.max(0, 5 - alreadyFeatured);
+    const missingRating = products.filter((p) => !p.rating || p.rating <= 0).length;
+    const missingFeatured = products.filter((p) => !p.featured).length;
+    if (missingRating === 0 && (toFeature === 0 || missingFeatured === 0)) {
+      alert("Todos os produtos já têm avaliação e não há mais nada para preencher.");
+      return;
+    }
+    if (!window.confirm("Isso vai preencher avaliação/nº de avaliações para produtos sem nota, e marcar até 5 produtos como destaque (sem mexer no que você já definiu). Continuar?")) return;
+    setProducts((prev) =>
+      prev.map((p) => {
+        const next = { ...p };
+        if (!next.rating || next.rating <= 0) {
+          next.rating = Math.round((4.3 + Math.random() * 0.7) * 10) / 10;
+          next.reviewCount = Math.floor(6 + Math.random() * 50);
+        }
+        if (!next.featured && toFeature > 0) {
+          next.featured = true;
+          toFeature--;
+        }
+        return next;
+      })
+    );
   }
 
   if (!unlocked) {
@@ -1475,7 +1869,14 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
           <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", color: PALETTE.text, fontSize: 22 }}>Painel do vendedor</h2>
           <p style={{ margin: "4px 0 0", color: PALETTE.muted, fontSize: 13 }}>{products.length} produtos cadastrados</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={autoFillShowcase}
+            title="Preenche avaliação e destaque para produtos que ainda não têm"
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.gold, color: PALETTE.gold, borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            <Star size={14} /> Preencher exemplos
+          </button>
           <button
             onClick={addProduct}
             style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
@@ -1541,7 +1942,7 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
             cursor: "pointer",
           }}
         >
-          <Megaphone size={14} /> Banners
+          <Megaphone size={14} /> Vitrine
         </button>
       </div>
 
@@ -1609,7 +2010,10 @@ function AdminPanel({ products, setProducts, whatsapp, setWhatsapp, sales, setSa
       ) : tab === "stock" ? (
         <AdminStockSales products={products} setProducts={setProducts} sales={sales} setSales={setSales} />
       ) : (
-        <AdminBanners banners={banners} setBanners={setBanners} />
+        <>
+          <AdminBanners banners={banners} setBanners={setBanners} />
+          <AdminBenefits benefits={benefits} setBenefits={setBenefits} />
+        </>
       )}
     </div>
   );
@@ -1644,6 +2048,8 @@ export default function App() {
   const [whatsapp, setWhatsapp] = useState(DEFAULT_WHATSAPP);
   const [sales, setSales] = useState([]);
   const [banners, setBanners] = useState(INITIAL_BANNERS);
+  const [benefits, setBenefits] = useState(INITIAL_BENEFITS);
+  const [selectedProductId, setSelectedProductId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("shop");
   const [cart, setCart] = useState([]);
@@ -1672,8 +2078,9 @@ export default function App() {
           setWhatsapp(data.data.whatsapp || DEFAULT_WHATSAPP);
           setSales(data.data.sales || []);
           setBanners(data.data.banners || INITIAL_BANNERS);
+          setBenefits(data.data.benefits || INITIAL_BENEFITS);
         } else {
-          await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [], banners: INITIAL_BANNERS } });
+          await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [], banners: INITIAL_BANNERS, benefits: INITIAL_BENEFITS } });
         }
       } catch (e) {
         console.error("Erro ao carregar catálogo do Supabase:", e);
@@ -1688,13 +2095,13 @@ export default function App() {
       try {
         const { error } = await supabase
           .from("moldeq_catalog")
-          .upsert({ id: STORAGE_KEY, data: { products, whatsapp, sales, banners }, updated_at: new Date().toISOString() });
+          .upsert({ id: STORAGE_KEY, data: { products, whatsapp, sales, banners, benefits }, updated_at: new Date().toISOString() });
         if (error) throw error;
       } catch (e) {
         console.error("Erro ao salvar catálogo no Supabase:", e);
       }
     })();
-  }, [products, whatsapp, sales, banners, loading]);
+  }, [products, whatsapp, sales, banners, benefits, loading]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -1733,6 +2140,23 @@ export default function App() {
     return products.filter((p) => p.active && p.name.toLowerCase().includes(search.toLowerCase()));
   }, [products, search]);
 
+  const featuredProducts = useMemo(() => {
+    return products.filter((p) => p.active && p.featured);
+  }, [products]);
+
+  const selectedProduct = selectedProductId ? products.find((p) => p.id === selectedProductId) : null;
+
+  function openProduct(id) {
+    setSelectedProductId(id);
+    setView("product");
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
+  function closeProduct() {
+    setView("shop");
+    setSelectedProductId(null);
+  }
+
   const fontImport = (
     <style>{"@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');"}</style>
   );
@@ -1762,7 +2186,7 @@ export default function App() {
 
       <header style={{ borderBottom: "1px solid " + PALETTE.border, position: "sticky", top: 0, background: "rgba(20,22,28,0.92)", backdropFilter: "blur(6px)", zIndex: 30 }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => setView("shop")}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={closeProduct}>
             <img src={LOGO_URI} alt="Moldeq" style={{ height: 34 }} />
           </div>
           {view === "shop" && (
@@ -1786,7 +2210,7 @@ export default function App() {
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {view === "shop" && (
+            {(view === "shop" || view === "product") && (
               <button
                 onClick={() => setCartOpen(true)}
                 style={{
@@ -1814,58 +2238,87 @@ export default function App() {
         </div>
       </header>
 
-      {view === "shop" ? (
+      {view === "admin" ? (
+        <AdminPanel
+          products={products}
+          setProducts={setProducts}
+          whatsapp={whatsapp}
+          setWhatsapp={setWhatsapp}
+          sales={sales}
+          setSales={setSales}
+          banners={banners}
+          setBanners={setBanners}
+          benefits={benefits}
+          setBenefits={setBenefits}
+          onExit={() => setView("shop")}
+        />
+      ) : (
         <>
-          <BannerCarousel banners={banners} />
-          <section style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 20px 30px", textAlign: "center" }}>
-            <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: PALETTE.gold, marginBottom: 14 }}>
-              Impressão 3D sob encomenda
-            </div>
-            <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(28px, 5vw, 46px)", margin: "0 0 14px", lineHeight: 1.15 }}>
-              Peças impressas, camada
-              <br />
-              por camada, do seu jeito.
-            </h1>
-            <p style={{ color: PALETTE.muted, maxWidth: 520, margin: "0 auto", fontSize: 15, lineHeight: 1.6 }}>
-              Escolha o modelo, a cor e a quantidade. Seu pedido vai direto para o WhatsApp — sem burocracia, sem cadastro.
-            </p>
-          </section>
+          {view === "shop" ? (
+            <>
+              <BannerCarousel banners={banners} />
+              <BenefitsStrip benefits={benefits} />
+              <ProductRail title="Mais vendidos" products={featuredProducts} onOpenProduct={openProduct} />
+              <section style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 20px 30px", textAlign: "center" }}>
+                <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: PALETTE.gold, marginBottom: 14 }}>
+                  Impressão 3D sob encomenda
+                </div>
+                <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(28px, 5vw, 46px)", margin: "0 0 14px", lineHeight: 1.15 }}>
+                  Peças impressas, camada
+                  <br />
+                  por camada, do seu jeito.
+                </h1>
+                <p style={{ color: PALETTE.muted, maxWidth: 520, margin: "0 auto", fontSize: 15, lineHeight: 1.6 }}>
+                  Escolha o modelo, a cor e a quantidade. Seu pedido vai direto para o WhatsApp — sem burocracia, sem cadastro.
+                </p>
+              </section>
 
-          <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px" }}>
-            <LayerLines height={22} opacity={0.55} />
-          </div>
-
-          <main id="catalogo" style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 20px 100px" }}>
-            {visibleProducts.length === 0 ? (
-              <p style={{ textAlign: "center", color: PALETTE.muted, marginTop: 60 }}>Nenhum produto encontrado para "{search}".</p>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 18 }}>
-                {visibleProducts.map((p) => (
-                  <ProductCard key={p.id} product={p} onAddToCart={addToCart} toast={showToast} />
-                ))}
+              <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px" }}>
+                <LayerLines height={22} opacity={0.55} />
               </div>
-            )}
-          </main>
 
-          <footer style={{ borderTop: "1px solid " + PALETTE.border, padding: "28px 20px 40px", textAlign: "center", color: PALETTE.muted, fontSize: 12, position: "relative" }}>
-            Moldeq · Catálogo oficial de produtos 3D · Pedidos via WhatsApp
-            <span
-              onClick={() => setView("admin")}
-              title=""
-              style={{
-                position: "absolute",
-                right: 16,
-                bottom: 6,
-                fontSize: 9,
-                color: "rgba(146,151,163,0.35)",
-                cursor: "pointer",
-                userSelect: "none",
-                letterSpacing: "0.02em",
-              }}
-            >
-              v1.0.3
-            </span>
-          </footer>
+              <main id="catalogo" style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 20px 100px" }}>
+                {visibleProducts.length === 0 ? (
+                  <p style={{ textAlign: "center", color: PALETTE.muted, marginTop: 60 }}>Nenhum produto encontrado para "{search}".</p>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 18 }}>
+                    {visibleProducts.map((p) => (
+                      <ProductCard key={p.id} product={p} onAddToCart={addToCart} onOpenProduct={openProduct} toast={showToast} />
+                    ))}
+                  </div>
+                )}
+              </main>
+
+              <footer style={{ borderTop: "1px solid " + PALETTE.border, padding: "28px 20px 40px", textAlign: "center", color: PALETTE.muted, fontSize: 12, position: "relative" }}>
+                Moldeq · Catálogo oficial de produtos 3D · Pedidos via WhatsApp
+                <span
+                  onClick={() => setView("admin")}
+                  title=""
+                  style={{
+                    position: "absolute",
+                    right: 16,
+                    bottom: 6,
+                    fontSize: 9,
+                    color: "rgba(146,151,163,0.35)",
+                    cursor: "pointer",
+                    userSelect: "none",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  v1.0.3
+                </span>
+              </footer>
+            </>
+          ) : selectedProduct ? (
+            <ProductDetailPage product={selectedProduct} allProducts={products} onAddToCart={addToCart} onBack={closeProduct} onOpenProduct={openProduct} toast={showToast} />
+          ) : (
+            <div style={{ padding: "80px 20px", textAlign: "center", color: PALETTE.muted }}>
+              Produto não encontrado.{" "}
+              <span onClick={closeProduct} style={{ color: PALETTE.gold, cursor: "pointer" }}>
+                Voltar ao catálogo
+              </span>
+            </div>
+          )}
 
           <CartDrawer
             open={cartOpen}
@@ -1923,8 +2376,6 @@ export default function App() {
             </button>
           )}
         </>
-      ) : (
-        <AdminPanel products={products} setProducts={setProducts} whatsapp={whatsapp} setWhatsapp={setWhatsapp} sales={sales} setSales={setSales} banners={banners} setBanners={setBanners} onExit={() => setView("shop")} />
       )}
 
       <Toast message={toastMsg} />
