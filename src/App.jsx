@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info } from "lucide-react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
+import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_HERO_CONTENT, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
 
 function formatBRL(v) {
   return "R$ " + Number(v).toFixed(2).replace(".", ",");
@@ -11,8 +11,13 @@ function uid() {
   return "p" + Math.random().toString(36).slice(2, 9);
 }
 
-function buildWhatsAppMessage(cart, products, note) {
-  const lines = ["Olá! Vim pelo site da Moldeq e gostaria de fazer o seguinte pedido:", ""];
+function buildWhatsAppMessage(cart, products, note, customerName) {
+  const lines = [
+    customerName
+      ? "Olá! Meu nome é " + customerName + ". Vim pelo site da Moldeq e gostaria de fazer o seguinte pedido:"
+      : "Olá! Vim pelo site da Moldeq e gostaria de fazer o seguinte pedido:",
+    "",
+  ];
   let total = 0;
   cart.forEach((item) => {
     const p = products.find((pr) => pr.id === item.productId);
@@ -749,7 +754,7 @@ function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
   );
 }
 
-function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, whatsapp, note, setNote, onSent }) {
+function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, whatsapp, note, setNote, onSent, customerName }) {
   const total = cart.reduce((sum, item) => {
     const p = products.find((pr) => pr.id === item.productId);
     return sum + (p ? p.price * item.qty : 0);
@@ -857,7 +862,7 @@ function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, what
               <span style={{ fontWeight: 700, color: PALETTE.goldBright }}>{formatBRL(total)}</span>
             </div>
             <a
-              href={"https://wa.me/" + whatsapp + "?text=" + encodeURIComponent(buildWhatsAppMessage(cart, products, note))}
+              href={"https://wa.me/" + whatsapp + "?text=" + encodeURIComponent(buildWhatsAppMessage(cart, products, note, customerName))}
               target="_blank"
               rel="noopener noreferrer"
               onClick={onSent}
@@ -983,6 +988,388 @@ function ProductRail({ title, products, onOpenProduct }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function translateAuthError(message) {
+  const m = (message || "").toLowerCase();
+  if (m.includes("invalid login credentials")) return "E-mail ou senha incorretos.";
+  if (m.includes("user already registered") || m.includes("already registered")) return "Esse e-mail já tem uma conta. Tente entrar em vez de criar uma nova.";
+  if (m.includes("password should be at least")) return "A senha precisa ter pelo menos 6 caracteres.";
+  if (m.includes("unable to validate email") || m.includes("invalid email")) return "Digite um e-mail válido.";
+  if (m.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar (verifique sua caixa de entrada).";
+  if (m.includes("rate limit")) return "Muitas tentativas seguidas. Aguarde um minuto e tente de novo.";
+  return "Não foi possível completar a ação. Tente novamente.";
+}
+
+function AuthModal({ onClose, onAuthenticated }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setLoading(false);
+    if (error) {
+      setError(translateAuthError(error.message));
+      return;
+    }
+    onAuthenticated();
+  }
+
+  async function handleSignup(e) {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    if (!name.trim()) {
+      setError("Digite seu nome.");
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { name: name.trim(), phone: phone.trim() } },
+    });
+    if (error) {
+      setLoading(false);
+      setError(translateAuthError(error.message));
+      return;
+    }
+    if (data.user) {
+      try {
+        await supabase.from("profiles").upsert({ id: data.user.id, name: name.trim(), phone: phone.trim() });
+      } catch (e) {}
+    }
+    setLoading(false);
+    if (data.session) {
+      onAuthenticated();
+    } else {
+      setInfo("Conta criada! Verifique seu e-mail para confirmar antes de entrar.");
+      setMode("login");
+    }
+  }
+
+  async function handleReset(e) {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    if (!email.trim()) {
+      setError("Digite seu e-mail primeiro.");
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+    setLoading(false);
+    if (error) {
+      setError(translateAuthError(error.message));
+      return;
+    }
+    setInfo("Enviamos um link de redefinição de senha para o seu e-mail.");
+  }
+
+  const inputStyle = {
+    width: "100%",
+    marginTop: 4,
+    background: PALETTE.surface2,
+    border: "1px solid " + PALETTE.border,
+    borderRadius: 8,
+    color: PALETTE.text,
+    padding: "10px 12px",
+    fontSize: 14,
+    boxSizing: "border-box",
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(8,9,12,0.65)", zIndex: 60 }} />
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "min(380px, 92vw)",
+          background: PALETTE.bg2,
+          border: "1px solid " + PALETTE.border,
+          borderRadius: 16,
+          padding: 24,
+          zIndex: 61,
+          maxHeight: "88vh",
+          overflowY: "auto",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+          <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, color: PALETTE.text }}>
+            {mode === "login" ? "Entrar" : mode === "signup" ? "Criar conta" : "Recuperar senha"}
+          </h2>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer" }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {mode !== "reset" && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 18, background: PALETTE.surface, borderRadius: 10, padding: 4 }}>
+            <button
+              onClick={() => {
+                setMode("login");
+                setError("");
+                setInfo("");
+              }}
+              style={{
+                flex: 1,
+                background: mode === "login" ? PALETTE.gold : "transparent",
+                color: mode === "login" ? "#1A1204" : PALETTE.muted,
+                border: "none",
+                borderRadius: 8,
+                padding: "8px 0",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Entrar
+            </button>
+            <button
+              onClick={() => {
+                setMode("signup");
+                setError("");
+                setInfo("");
+              }}
+              style={{
+                flex: 1,
+                background: mode === "signup" ? PALETTE.gold : "transparent",
+                color: mode === "signup" ? "#1A1204" : PALETTE.muted,
+                border: "none",
+                borderRadius: 8,
+                padding: "8px 0",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Criar conta
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={mode === "login" ? handleLogin : mode === "signup" ? handleSignup : handleReset} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {mode === "signup" && (
+            <>
+              <label style={{ fontSize: 12, color: PALETTE.muted }}>
+                Nome
+                <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} required />
+              </label>
+              <label style={{ fontSize: 12, color: PALETTE.muted }}>
+                Telefone (opcional)
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 99999-9999" style={inputStyle} />
+              </label>
+            </>
+          )}
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            E-mail
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} required />
+          </label>
+          {mode !== "reset" && (
+            <label style={{ fontSize: 12, color: PALETTE.muted }}>
+              Senha
+              <div style={{ position: "relative" }}>
+                <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} style={inputStyle} required minLength={6} />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  style={{ position: "absolute", right: 8, top: 8, background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer" }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </label>
+          )}
+
+          {error && <p style={{ fontSize: 12, color: PALETTE.danger, margin: 0 }}>{error}</p>}
+          {info && <p style={{ fontSize: 12, color: PALETTE.gold, margin: 0 }}>{info}</p>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              background: PALETTE.gold,
+              color: "#1A1204",
+              border: "none",
+              borderRadius: 10,
+              padding: "12px 0",
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: loading ? "wait" : "pointer",
+              marginTop: 4,
+            }}
+          >
+            {loading ? "Um instante..." : mode === "login" ? "Entrar" : mode === "signup" ? "Criar conta" : "Enviar link de redefinição"}
+          </button>
+
+          {mode === "login" && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode("reset");
+                setError("");
+                setInfo("");
+              }}
+              style={{ background: "transparent", border: "none", color: PALETTE.muted, fontSize: 12, cursor: "pointer", textAlign: "center" }}
+            >
+              Esqueci minha senha
+            </button>
+          )}
+          {mode === "reset" && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setError("");
+                setInfo("");
+              }}
+              style={{ background: "transparent", border: "none", color: PALETTE.muted, fontSize: 12, cursor: "pointer", textAlign: "center" }}
+            >
+              ← Voltar para entrar
+            </button>
+          )}
+        </form>
+      </div>
+    </>
+  );
+}
+
+function AccountMenu({ user, profile, onOpenAuth, onLogout, onOpenOrders }) {
+  const [open, setOpen] = useState(false);
+
+  if (!user) {
+    return (
+      <button
+        onClick={onOpenAuth}
+        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, borderRadius: 8, padding: "8px 12px", color: PALETTE.text, cursor: "pointer", fontSize: 13 }}
+      >
+        <User size={15} /> Entrar
+      </button>
+    );
+  }
+
+  const firstName = profile && profile.name ? profile.name.split(" ")[0] : "Conta";
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, borderRadius: 8, padding: "8px 12px", color: PALETTE.text, cursor: "pointer", fontSize: 13, maxWidth: 130 }}
+      >
+        <User size={15} />
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{firstName}</span>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+          <div
+            style={{
+              position: "absolute",
+              right: 0,
+              top: "calc(100% + 6px)",
+              background: PALETTE.surface2,
+              border: "1px solid " + PALETTE.border,
+              borderRadius: 10,
+              minWidth: 170,
+              zIndex: 30,
+              overflow: "hidden",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            }}
+          >
+            <button
+              onClick={() => {
+                setOpen(false);
+                onOpenOrders();
+              }}
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "transparent", border: "none", color: PALETTE.text, padding: "10px 14px", fontSize: 13, cursor: "pointer", textAlign: "left" }}
+            >
+              <PackageCheck size={14} /> Meus pedidos
+            </button>
+            <button
+              onClick={() => {
+                setOpen(false);
+                onLogout();
+              }}
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "transparent", border: "none", color: PALETTE.danger, padding: "10px 14px", fontSize: 13, cursor: "pointer", textAlign: "left", borderTop: "1px solid " + PALETTE.border }}
+            >
+              <LogOut size={14} /> Sair
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function OrdersPage({ user, onBack }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+        if (error) throw error;
+        setOrders(data || []);
+      } catch (e) {
+        console.error("Erro ao carregar pedidos:", e);
+      }
+      setLoading(false);
+    })();
+  }, [user.id]);
+
+  return (
+    <div style={{ maxWidth: 700, margin: "0 auto", padding: "24px 20px 80px" }}>
+      <button
+        onClick={onBack}
+        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", fontSize: 13, marginBottom: 18, padding: 0 }}
+      >
+        <ChevronLeft size={15} /> Voltar ao catálogo
+      </button>
+      <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 24, color: PALETTE.text, margin: "0 0 18px" }}>Meus pedidos</h1>
+
+      {loading ? (
+        <p style={{ color: PALETTE.muted, fontSize: 14 }}>Carregando...</p>
+      ) : orders.length === 0 ? (
+        <p style={{ color: PALETTE.muted, fontSize: 14 }}>Você ainda não fez nenhum pedido por aqui.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {orders.map((o) => (
+            <div key={o.id} style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+                <span style={{ fontSize: 12, color: PALETTE.muted }}>{formatDatePt(o.created_at)}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: PALETTE.goldBright, fontFamily: "'Space Grotesk', sans-serif" }}>{formatBRL(o.total)}</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {(o.items || []).map((it, i) => (
+                  <div key={i} style={{ fontSize: 13, color: PALETTE.text }}>
+                    • {it.name}
+                    {it.colorName ? " — " + it.colorName : ""}
+                    {it.sizeName ? " — " + it.sizeName : ""} — qtd {it.qty}
+                  </div>
+                ))}
+              </div>
+              {o.note && <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 8, marginBottom: 0 }}>Obs: {o.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1308,6 +1695,15 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
             onChange={(e) => updateField("description", e.target.value)}
             rows={2}
             style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+          />
+        </label>
+        <label style={{ fontSize: 12, color: PALETTE.muted }}>
+          Categoria (usada no filtro da loja)
+          <input
+            value={form.category || ""}
+            onChange={(e) => updateField("category", e.target.value)}
+            placeholder="Ex: Suportes, Organizadores, Decoração..."
+            style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
           />
         </label>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -2002,6 +2398,199 @@ function AdminBenefits({ benefits, setBenefits }) {
   );
 }
 
+function CategoryFilter({ categories, selected, onSelect }) {
+  const [open, setOpen] = useState(false);
+  if (!categories || categories.length === 0) return null;
+
+  const label = selected || "Categorias";
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: PALETTE.surface,
+          border: "1px solid " + PALETTE.border,
+          borderRadius: 999,
+          padding: "8px 14px",
+          color: PALETTE.text,
+          cursor: "pointer",
+          fontSize: 13,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <LayoutGrid size={14} color={PALETTE.gold} />
+        {label}
+        <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: "calc(100% + 6px)",
+              background: PALETTE.surface2,
+              border: "1px solid " + PALETTE.border,
+              borderRadius: 10,
+              minWidth: 200,
+              zIndex: 30,
+              overflow: "hidden",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            }}
+          >
+            <button
+              onClick={() => {
+                onSelect("");
+                setOpen(false);
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                background: !selected ? PALETTE.surface : "transparent",
+                border: "none",
+                color: PALETTE.text,
+                padding: "10px 14px",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Todas as categorias
+            </button>
+            {categories.map((c) => (
+              <button
+                key={c}
+                onClick={() => {
+                  onSelect(c);
+                  setOpen(false);
+                }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  background: selected === c ? PALETTE.surface : "transparent",
+                  border: "none",
+                  borderTop: "1px solid " + PALETTE.border,
+                  color: PALETTE.text,
+                  padding: "10px 14px",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CustomOrderButton({ whatsapp }) {
+  const message = "Olá! Gostaria de saber sobre a possibilidade de fazer uma peça personalizada/sob encomenda.";
+  return (
+    <a
+      href={"https://wa.me/" + whatsapp + "?text=" + encodeURIComponent(message)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Pedir peça personalizada"
+      style={{
+        position: "fixed",
+        bottom: 90,
+        right: 22,
+        background: "#25D366",
+        border: "none",
+        borderRadius: 999,
+        width: 48,
+        height: 48,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+        zIndex: 19,
+        textDecoration: "none",
+      }}
+    >
+      <Sparkles size={20} color="#0A2E1A" />
+    </a>
+  );
+}
+
+function AdminHeroText({ heroContent, setHeroContent }) {
+  const [draft, setDraft] = useState(heroContent);
+
+  function update(field, value) {
+    setDraft((d) => ({ ...d, [field]: value }));
+  }
+
+  function save() {
+    setHeroContent(draft);
+  }
+
+  function reset() {
+    setDraft(INITIAL_HERO_CONTENT);
+    setHeroContent(INITIAL_HERO_CONTENT);
+  }
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <Pencil size={16} color={PALETTE.gold} />
+        <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Texto de destaque (topo da página)</h3>
+      </div>
+      <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 0, marginBottom: 14 }}>
+        Aparece logo abaixo do banner: a fraseinha pequena, o título grande e a linha de apoio.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 520 }}>
+        <label style={{ fontSize: 12, color: PALETTE.muted }}>
+          Frase pequena (acima do título)
+          <input
+            value={draft.eyebrow}
+            onChange={(e) => update("eyebrow", e.target.value)}
+            style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
+          />
+        </label>
+        <label style={{ fontSize: 12, color: PALETTE.muted }}>
+          Título grande (use uma linha em branco/Enter para quebrar a linha)
+          <textarea
+            value={draft.title}
+            onChange={(e) => update("title", e.target.value)}
+            rows={2}
+            style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+          />
+        </label>
+        <label style={{ fontSize: 12, color: PALETTE.muted }}>
+          Linha de apoio (texto menor abaixo do título)
+          <textarea
+            value={draft.subtitle}
+            onChange={(e) => update("subtitle", e.target.value)}
+            rows={2}
+            style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+          />
+        </label>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={save}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            <Check size={14} /> Salvar texto
+          </button>
+          <button onClick={reset} style={{ background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.muted, borderRadius: 8, padding: "9px 16px", fontSize: 13, cursor: "pointer" }}>
+            Restaurar padrão
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminPricingCalculator({ products, setProducts, pricingSettings, setPricingSettings }) {
   const [settingsDraft, setSettingsDraft] = useState(pricingSettings);
   const [weight, setWeight] = useState(50);
@@ -2309,6 +2898,8 @@ function AdminPanel({
   setBanners,
   benefits,
   setBenefits,
+  heroContent,
+  setHeroContent,
   pricingSettings,
   setPricingSettings,
   saveStatus,
@@ -2608,6 +3199,7 @@ function AdminPanel({
         <>
           <AdminBanners banners={banners} setBanners={setBanners} />
           <AdminBenefits benefits={benefits} setBenefits={setBenefits} />
+          <AdminHeroText heroContent={heroContent} setHeroContent={setHeroContent} />
         </>
       ) : (
         <AdminPricingCalculator products={products} setProducts={setProducts} pricingSettings={pricingSettings} setPricingSettings={setPricingSettings} />
@@ -2646,8 +3238,12 @@ export default function App() {
   const [sales, setSales] = useState([]);
   const [banners, setBanners] = useState(INITIAL_BANNERS);
   const [benefits, setBenefits] = useState(INITIAL_BENEFITS);
+  const [heroContent, setHeroContent] = useState(INITIAL_HERO_CONTENT);
   const [pricingSettings, setPricingSettings] = useState(INITIAL_PRICING_SETTINGS);
   const [selectedProductId, setSelectedProductId] = useState(null);
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
@@ -2656,6 +3252,7 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [note, setNote] = useState("");
   const [toastMsg, setToastMsg] = useState("");
   const toastTimer = useRef(null);
@@ -2670,6 +3267,57 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    async function loadProfile(uid) {
+      try {
+        const { data } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
+        setProfile(data || null);
+      } catch (e) {
+        setProfile(null);
+      }
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      const sessionUser = data.session ? data.session.user : null;
+      setUser(sessionUser);
+      if (sessionUser) loadProfile(sessionUser.id);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const sessionUser = session ? session.user : null;
+      setUser(sessionUser);
+      if (sessionUser) {
+        loadProfile(sessionUser.id);
+      } else {
+        setProfile(null);
+      }
+    });
+
+    return () => {
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    if (view === "orders") setView("shop");
+  }
+
+  async function saveOrderRecord(cartItems, total, orderNote) {
+    if (!user) return;
+    try {
+      const items = cartItems.map((item) => {
+        const p = products.find((pr) => pr.id === item.productId);
+        return { productId: item.productId, name: p ? p.name : "", colorName: item.colorName, sizeName: item.sizeName, qty: item.qty, unitPrice: p ? p.price : 0 };
+      });
+      await supabase.from("orders").insert({ user_id: user.id, items, total, note: orderNote || null });
+    } catch (e) {
+      console.error("Erro ao salvar histórico de pedido:", e);
+    }
+  }
+
+  useEffect(() => {
     (async () => {
       try {
         const { data, error } = await supabase.from("moldeq_catalog").select("data").eq("id", STORAGE_KEY).maybeSingle();
@@ -2680,6 +3328,7 @@ export default function App() {
           setWhatsapp(data.data.whatsapp || DEFAULT_WHATSAPP);
           setSales(data.data.sales || []);
           setBenefits(data.data.benefits || INITIAL_BENEFITS);
+          setHeroContent({ ...INITIAL_HERO_CONTENT, ...(data.data.heroContent || {}) });
           setPricingSettings({ ...INITIAL_PRICING_SETTINGS, ...(data.data.pricingSettings || {}) });
 
           if (hasLegacyBase64Images(loadedProducts, loadedBanners)) {
@@ -2699,7 +3348,15 @@ export default function App() {
         } else {
           await supabase.from("moldeq_catalog").upsert({
             id: STORAGE_KEY,
-            data: { products: INITIAL_PRODUCTS, whatsapp: DEFAULT_WHATSAPP, sales: [], banners: INITIAL_BANNERS, benefits: INITIAL_BENEFITS, pricingSettings: INITIAL_PRICING_SETTINGS },
+            data: {
+              products: INITIAL_PRODUCTS,
+              whatsapp: DEFAULT_WHATSAPP,
+              sales: [],
+              banners: INITIAL_BANNERS,
+              benefits: INITIAL_BENEFITS,
+              heroContent: INITIAL_HERO_CONTENT,
+              pricingSettings: INITIAL_PRICING_SETTINGS,
+            },
           });
         }
       } catch (e) {
@@ -2710,7 +3367,7 @@ export default function App() {
   }, []);
 
   async function persistCatalog() {
-    const payload = { products, whatsapp, sales, banners, benefits, pricingSettings };
+    const payload = { products, whatsapp, sales, banners, benefits, heroContent, pricingSettings };
     const json = JSON.stringify(payload);
     if (json.length > 4_500_000) {
       const sizeMB = (json.length / (1024 * 1024)).toFixed(1);
@@ -2736,7 +3393,7 @@ export default function App() {
   useEffect(() => {
     if (loading || migrating) return;
     persistCatalog();
-  }, [products, whatsapp, sales, banners, benefits, pricingSettings, loading, migrating]);
+  }, [products, whatsapp, sales, banners, benefits, heroContent, pricingSettings, loading, migrating]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -2772,8 +3429,15 @@ export default function App() {
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
   const visibleProducts = useMemo(() => {
-    return products.filter((p) => p.active && p.name.toLowerCase().includes(search.toLowerCase()));
-  }, [products, search]);
+    return products.filter(
+      (p) => p.active && p.name.toLowerCase().includes(search.toLowerCase()) && (!categoryFilter || p.category === categoryFilter)
+    );
+  }, [products, search, categoryFilter]);
+
+  const categories = useMemo(() => {
+    const set = new Set(products.filter((p) => p.active && p.category).map((p) => p.category));
+    return Array.from(set).sort();
+  }, [products]);
 
   const featuredProducts = useMemo(() => {
     return products.filter((p) => p.active && p.featured);
@@ -2822,10 +3486,13 @@ export default function App() {
       {fontImport}
 
       <header style={{ borderBottom: "1px solid " + PALETTE.border, position: "sticky", top: 0, background: "rgba(20,22,28,0.92)", backdropFilter: "blur(6px)", zIndex: 30 }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={closeProduct}>
             <img src={LOGO_URI} alt="Moldeq" style={{ height: 34 }} />
           </div>
+          {view === "shop" && (
+            <CategoryFilter categories={categories} selected={categoryFilter} onSelect={setCategoryFilter} />
+          )}
           {view === "shop" && (
             <div style={{ flex: 1, maxWidth: 320, position: "relative" }}>
               <Search size={15} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: PALETTE.muted }} />
@@ -2847,7 +3514,16 @@ export default function App() {
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {(view === "shop" || view === "product") && (
+            {(view === "shop" || view === "product" || view === "orders") && (
+              <AccountMenu
+                user={user}
+                profile={profile}
+                onOpenAuth={() => setAuthModalOpen(true)}
+                onLogout={handleLogout}
+                onOpenOrders={() => setView("orders")}
+              />
+            )}
+            {(view === "shop" || view === "product" || view === "orders") && (
               <button
                 onClick={() => setCartOpen(true)}
                 style={{
@@ -2887,6 +3563,8 @@ export default function App() {
           setBanners={setBanners}
           benefits={benefits}
           setBenefits={setBenefits}
+          heroContent={heroContent}
+          setHeroContent={setHeroContent}
           pricingSettings={pricingSettings}
           setPricingSettings={setPricingSettings}
           saveStatus={saveStatus}
@@ -2903,16 +3581,17 @@ export default function App() {
               <ProductRail title="Mais vendidos" products={featuredProducts} onOpenProduct={openProduct} />
               <section style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 20px 30px", textAlign: "center" }}>
                 <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: PALETTE.gold, marginBottom: 14 }}>
-                  Impressão 3D sob encomenda
+                  {heroContent.eyebrow}
                 </div>
                 <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(28px, 5vw, 46px)", margin: "0 0 14px", lineHeight: 1.15 }}>
-                  Peças impressas, camada
-                  <br />
-                  por camada, do seu jeito.
+                  {heroContent.title.split("\n").map((line, i, arr) => (
+                    <span key={i}>
+                      {line}
+                      {i < arr.length - 1 && <br />}
+                    </span>
+                  ))}
                 </h1>
-                <p style={{ color: PALETTE.muted, maxWidth: 520, margin: "0 auto", fontSize: 15, lineHeight: 1.6 }}>
-                  Escolha o modelo, a cor e a quantidade. Seu pedido vai direto para o WhatsApp — sem burocracia, sem cadastro.
-                </p>
+                <p style={{ color: PALETTE.muted, maxWidth: 520, margin: "0 auto", fontSize: 15, lineHeight: 1.6 }}>{heroContent.subtitle}</p>
               </section>
 
               <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px" }}>
@@ -2951,16 +3630,20 @@ export default function App() {
                 </span>
               </footer>
             </>
-          ) : selectedProduct ? (
-            <ProductDetailPage product={selectedProduct} allProducts={products} onAddToCart={addToCart} onBack={closeProduct} onOpenProduct={openProduct} toast={showToast} />
-          ) : (
-            <div style={{ padding: "80px 20px", textAlign: "center", color: PALETTE.muted }}>
-              Produto não encontrado.{" "}
-              <span onClick={closeProduct} style={{ color: PALETTE.gold, cursor: "pointer" }}>
-                Voltar ao catálogo
-              </span>
-            </div>
-          )}
+          ) : view === "product" ? (
+            selectedProduct ? (
+              <ProductDetailPage product={selectedProduct} allProducts={products} onAddToCart={addToCart} onBack={closeProduct} onOpenProduct={openProduct} toast={showToast} />
+            ) : (
+              <div style={{ padding: "80px 20px", textAlign: "center", color: PALETTE.muted }}>
+                Produto não encontrado.{" "}
+                <span onClick={closeProduct} style={{ color: PALETTE.gold, cursor: "pointer" }}>
+                  Voltar ao catálogo
+                </span>
+              </div>
+            )
+          ) : view === "orders" && user ? (
+            <OrdersPage user={user} onBack={() => setView("shop")} />
+          ) : null}
 
           <CartDrawer
             open={cartOpen}
@@ -2972,10 +3655,18 @@ export default function App() {
             whatsapp={whatsapp}
             note={note}
             setNote={setNote}
+            customerName={profile && profile.name ? profile.name : ""}
             onSent={() => {
               showToast("Pedido aberto no WhatsApp!");
+              const total = cart.reduce((sum, item) => {
+                const p = products.find((pr) => pr.id === item.productId);
+                return sum + (p ? p.price * item.qty : 0);
+              }, 0);
+              saveOrderRecord(cart, total, note);
             }}
           />
+
+          {!cartOpen && <CustomOrderButton whatsapp={whatsapp} />}
 
           {!cartOpen && (
             <button
@@ -3018,6 +3709,16 @@ export default function App() {
             </button>
           )}
         </>
+      )}
+
+      {authModalOpen && (
+        <AuthModal
+          onClose={() => setAuthModalOpen(false)}
+          onAuthenticated={() => {
+            setAuthModalOpen(false);
+            showToast("Login feito com sucesso!");
+          }}
+        />
       )}
 
       <Toast message={toastMsg} />
