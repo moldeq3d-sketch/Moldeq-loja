@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles } from "lucide-react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles, DollarSign, Percent, Gift, ThumbsUp, Phone, MapPin } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_HERO_CONTENT, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
+import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_CATEGORIES, INITIAL_HERO_CONTENT, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
 
 function formatBRL(v) {
   return "R$ " + Number(v).toFixed(2).replace(".", ",");
@@ -266,7 +266,40 @@ const PALETTE = {
   text: "#F1EEE4",
   muted: "#9297A3",
   danger: "#C0392B",
+  discount: "#E8734A",
 };
+
+function PriceDisplay({ price, originalPrice, priceFrom, size = "normal" }) {
+  const hasDiscount = originalPrice && originalPrice > price;
+  const percentOff = hasDiscount ? Math.round((1 - price / originalPrice) * 100) : 0;
+  const bigSize = size === "large" ? 26 : size === "small" ? 15 : 19;
+  const smallSize = size === "large" ? 15 : size === "small" ? 11 : 13;
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+      <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: bigSize, color: PALETTE.goldBright }}>
+        {priceFrom ? "a partir de " : ""}
+        {formatBRL(price)}
+      </span>
+      {hasDiscount && (
+        <>
+          <span style={{ fontSize: smallSize, color: PALETTE.muted, textDecoration: "line-through" }}>{formatBRL(originalPrice)}</span>
+          <span
+            style={{
+              fontSize: smallSize - 1,
+              fontWeight: 700,
+              color: PALETTE.discount,
+              background: "rgba(232,115,74,0.15)",
+              padding: "2px 7px",
+              borderRadius: 6,
+            }}
+          >
+            -{percentOff}%
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
 
 function LayerLines({ height = 28, opacity = 0.35, color = PALETTE.gold }) {
   return (
@@ -675,9 +708,8 @@ function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
           <StarRating rating={product.rating} count={product.reviewCount} size={12} />
         </div>
 
-        <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 19, fontWeight: 700, color: PALETTE.goldBright, minHeight: 24 }}>
-          {product.priceFrom ? "a partir de " : ""}
-          {formatBRL(product.price)}
+        <div style={{ minHeight: 24 }}>
+          <PriceDisplay price={product.price} originalPrice={product.originalPrice} priceFrom={product.priceFrom} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: hasColors ? 26 : 0 }}>
@@ -886,7 +918,21 @@ function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, what
   );
 }
 
-const BENEFIT_ICONS = { truck: Truck, shield: ShieldCheck, message: MessageCircle, award: Award, clock: Clock, package: Package };
+const BENEFIT_ICONS = {
+  truck: Truck,
+  shield: ShieldCheck,
+  message: MessageCircle,
+  award: Award,
+  clock: Clock,
+  package: Package,
+  money: DollarSign,
+  percent: Percent,
+  gift: Gift,
+  thumbsup: ThumbsUp,
+  phone: Phone,
+  pin: MapPin,
+  star: Star,
+};
 
 function BenefitsStrip({ benefits }) {
   const active = (benefits || []).filter((b) => b.active !== false && b.text);
@@ -983,7 +1029,9 @@ function ProductRail({ title, products, onOpenProduct }) {
               <div style={{ marginTop: 5, minHeight: 14 }}>
                 <StarRating rating={p.rating} count={p.reviewCount} size={11} />
               </div>
-              <div style={{ marginTop: 5, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: PALETTE.goldBright, fontSize: 15 }}>{formatBRL(p.price)}</div>
+              <div style={{ marginTop: 5 }}>
+                <PriceDisplay price={p.price} originalPrice={p.originalPrice} priceFrom={p.priceFrom} size="small" />
+              </div>
             </div>
           </div>
         ))}
@@ -1415,9 +1463,8 @@ function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenPr
           <div style={{ marginTop: 10, minHeight: 18 }}>
             <StarRating rating={product.rating} count={product.reviewCount} size={15} />
           </div>
-          <div style={{ marginTop: 14, fontFamily: "'Space Grotesk', sans-serif", fontSize: 28, fontWeight: 700, color: PALETTE.goldBright }}>
-            {product.priceFrom ? "a partir de " : ""}
-            {formatBRL(product.price)}
+          <div style={{ marginTop: 14 }}>
+            <PriceDisplay price={product.price} originalPrice={product.originalPrice} priceFrom={product.priceFrom} size="large" />
           </div>
           <p style={{ marginTop: 14, fontSize: 14, color: PALETTE.muted, lineHeight: 1.6 }}>{product.description}</p>
 
@@ -1499,7 +1546,7 @@ function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenPr
   );
 }
 
-function AdminProductForm({ product, onSave, onCancel, onDelete }) {
+function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
   const [form, setForm] = useState(() => {
     const base = JSON.parse(JSON.stringify(product));
     if (!base.media || base.media.length === 0) {
@@ -1699,12 +1746,18 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
         </label>
         <label style={{ fontSize: 12, color: PALETTE.muted }}>
           Categoria (usada no filtro da loja)
-          <input
+          <select
             value={form.category || ""}
             onChange={(e) => updateField("category", e.target.value)}
-            placeholder="Ex: Suportes, Organizadores, Decoração..."
-            style={{ width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
-          />
+            style={{ display: "block", width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
+          >
+            <option value="">Sem categoria</option>
+            {(categories || []).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </label>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <label style={{ fontSize: 12, color: PALETTE.muted }}>
@@ -1715,6 +1768,17 @@ function AdminProductForm({ product, onSave, onCancel, onDelete }) {
               value={form.price}
               onChange={(e) => updateField("price", Number(e.target.value))}
               style={{ display: "block", marginTop: 4, width: 110, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Preço original (opcional, mostra desconto)
+            <input
+              type="number"
+              step="0.01"
+              value={form.originalPrice || ""}
+              onChange={(e) => updateField("originalPrice", e.target.value === "" ? 0 : Number(e.target.value))}
+              placeholder="Ex: 119,90"
+              style={{ display: "block", marginTop: 4, width: 150, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
             />
           </label>
           <label style={{ fontSize: 12, color: PALETTE.muted, display: "flex", alignItems: "center", gap: 6, marginTop: 20 }}>
@@ -2377,6 +2441,13 @@ function AdminBenefits({ benefits, setBenefits }) {
                 <option value="award">Selo</option>
                 <option value="clock">Relógio</option>
                 <option value="package">Caixa</option>
+                <option value="money">Cifrão</option>
+                <option value="percent">Porcentagem</option>
+                <option value="gift">Presente</option>
+                <option value="thumbsup">Joinha</option>
+                <option value="phone">Telefone</option>
+                <option value="pin">Localização</option>
+                <option value="star">Estrela</option>
               </select>
               <input
                 value={b.text}
@@ -2523,6 +2594,74 @@ function CustomOrderButton({ whatsapp }) {
   );
 }
 
+function AdminCategories({ categories, setCategories, products }) {
+  const [draft, setDraft] = useState("");
+
+  function addCategory() {
+    const name = draft.trim();
+    if (!name) return;
+    if (categories.some((c) => c.toLowerCase() === name.toLowerCase())) {
+      setDraft("");
+      return;
+    }
+    setCategories((prev) => [...prev, name]);
+    setDraft("");
+  }
+
+  function removeCategory(name) {
+    const inUse = (products || []).filter((p) => p.category === name).length;
+    if (inUse > 0 && !window.confirm(inUse + " produto(s) usam essa categoria e vão ficar sem categoria. Remover mesmo assim?")) return;
+    setCategories((prev) => prev.filter((c) => c !== name));
+  }
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <LayoutGrid size={16} color={PALETTE.gold} />
+        <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Categorias</h3>
+      </div>
+      <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 0, marginBottom: 14 }}>
+        Controla o filtro "Categorias" da loja e a lista que aparece na edição de cada produto.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, maxWidth: 420 }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addCategory();
+            }
+          }}
+          placeholder="Nova categoria (ex: Utilidades)"
+          style={{ flex: 1, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 13, boxSizing: "border-box" }}
+        />
+        <button
+          onClick={addCategory}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+        >
+          <Plus size={14} /> Adicionar
+        </button>
+      </div>
+
+      {categories.length === 0 ? (
+        <p style={{ fontSize: 12, color: PALETTE.muted }}>Nenhuma categoria cadastrada ainda.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 420 }}>
+          {categories.map((c) => (
+            <div key={c} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, padding: "8px 12px" }}>
+              <span style={{ fontSize: 13, color: PALETTE.text }}>{c}</span>
+              <button onClick={() => removeCategory(c)} style={{ background: "transparent", border: "none", color: PALETTE.danger, cursor: "pointer" }}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminHeroText({ heroContent, setHeroContent }) {
   const [draft, setDraft] = useState(heroContent);
 
@@ -2596,6 +2735,7 @@ function AdminPricingCalculator({ products, setProducts, pricingSettings, setPri
   const [weight, setWeight] = useState(50);
   const [printHours, setPrintHours] = useState(3);
   const [laborMinutes, setLaborMinutes] = useState(15);
+  const [extraMaterialsCost, setExtraMaterialsCost] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [customMargin, setCustomMargin] = useState(null);
   const [applyProductId, setApplyProductId] = useState(products[0] ? products[0].id : "");
@@ -2615,7 +2755,8 @@ function AdminPricingCalculator({ products, setProducts, pricingSettings, setPri
   const energyCost = (settingsDraft.printerWattage / 1000) * printHours * settingsDraft.energyPricePerKwh;
   const toolsCost = settingsDraft.toolsCostPerHour * printHours;
   const laborCost = (laborMinutes / 60) * settingsDraft.laborHourlyRate;
-  const baseSubtotal = filamentCost + energyCost + toolsCost + laborCost;
+  const extraCost = Math.max(0, Number(extraMaterialsCost) || 0);
+  const baseSubtotal = filamentCost + energyCost + toolsCost + laborCost + extraCost;
   const failureReserve = baseSubtotal * (settingsDraft.failureRatePercent / 100);
   const totalCost = baseSubtotal + failureReserve;
   const salePrice = totalCost * (1 + margin / 100);
@@ -2676,7 +2817,7 @@ function AdminPricingCalculator({ products, setProducts, pricingSettings, setPri
             />
           </label>
           <label style={{ fontSize: 12, color: PALETTE.muted }}>
-            Utensílios/desgaste (R$/hora)
+            Desgaste da impressora (R$/hora)
             <input
               type="number"
               min="0"
@@ -2761,6 +2902,18 @@ function AdminPricingCalculator({ products, setProducts, pricingSettings, setPri
             />
           </label>
           <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Utensílios usados na peça (R$)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={extraMaterialsCost}
+              onChange={(e) => setExtraMaterialsCost(Math.max(0, Number(e.target.value) || 0))}
+              placeholder="Chaveiro, parafuso, ímã..."
+              style={{ width: "100%", marginTop: 4, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
             Quantidade (lote)
             <input
               type="number"
@@ -2796,12 +2949,16 @@ function AdminPricingCalculator({ products, setProducts, pricingSettings, setPri
             <span>{formatBRL(energyCost)}</span>
           </div>
           <div style={row}>
-            <span>Utensílios/desgaste</span>
+            <span>Desgaste da impressora</span>
             <span>{formatBRL(toolsCost)}</span>
           </div>
           <div style={row}>
             <span>Mão de obra</span>
             <span>{formatBRL(laborCost)}</span>
+          </div>
+          <div style={row}>
+            <span>Utensílios usados na peça</span>
+            <span>{formatBRL(extraCost)}</span>
           </div>
           <div style={row}>
             <span>Reserva para falhas ({settingsDraft.failureRatePercent}%)</span>
@@ -2898,6 +3055,8 @@ function AdminPanel({
   setBanners,
   benefits,
   setBenefits,
+  categories,
+  setCategories,
   heroContent,
   setHeroContent,
   pricingSettings,
@@ -3155,7 +3314,7 @@ function AdminPanel({
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {products.map((p) =>
               editingId === p.id ? (
-                <AdminProductForm key={p.id} product={p} onSave={saveProduct} onCancel={() => setEditingId(null)} onDelete={deleteProduct} />
+                <AdminProductForm key={p.id} product={p} categories={categories} onSave={saveProduct} onCancel={() => setEditingId(null)} onDelete={deleteProduct} />
               ) : (
                 <div
                   key={p.id}
@@ -3199,6 +3358,7 @@ function AdminPanel({
         <>
           <AdminBanners banners={banners} setBanners={setBanners} />
           <AdminBenefits benefits={benefits} setBenefits={setBenefits} />
+          <AdminCategories categories={categories} setCategories={setCategories} products={products} />
           <AdminHeroText heroContent={heroContent} setHeroContent={setHeroContent} />
         </>
       ) : (
@@ -3238,6 +3398,7 @@ export default function App() {
   const [sales, setSales] = useState([]);
   const [banners, setBanners] = useState(INITIAL_BANNERS);
   const [benefits, setBenefits] = useState(INITIAL_BENEFITS);
+  const [categories, setCategories] = useState(INITIAL_CATEGORIES);
   const [heroContent, setHeroContent] = useState(INITIAL_HERO_CONTENT);
   const [pricingSettings, setPricingSettings] = useState(INITIAL_PRICING_SETTINGS);
   const [selectedProductId, setSelectedProductId] = useState(null);
@@ -3246,6 +3407,8 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const lastKnownUpdatedAt = useRef(null);
   const [saveStatus, setSaveStatus] = useState("idle");
   const [saveErrorDetail, setSaveErrorDetail] = useState("");
   const [view, setView] = useState("shop");
@@ -3320,7 +3483,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await supabase.from("moldeq_catalog").select("data").eq("id", STORAGE_KEY).maybeSingle();
+        const { data, error } = await supabase.from("moldeq_catalog").select("data, updated_at").eq("id", STORAGE_KEY).maybeSingle();
         if (error) throw error;
         if (data && data.data) {
           let loadedProducts = data.data.products || INITIAL_PRODUCTS;
@@ -3328,8 +3491,10 @@ export default function App() {
           setWhatsapp(data.data.whatsapp || DEFAULT_WHATSAPP);
           setSales(data.data.sales || []);
           setBenefits(data.data.benefits || INITIAL_BENEFITS);
+          setCategories(data.data.categories || INITIAL_CATEGORIES);
           setHeroContent({ ...INITIAL_HERO_CONTENT, ...(data.data.heroContent || {}) });
           setPricingSettings({ ...INITIAL_PRICING_SETTINGS, ...(data.data.pricingSettings || {}) });
+          lastKnownUpdatedAt.current = data.updated_at || null;
 
           if (hasLegacyBase64Images(loadedProducts, loadedBanners)) {
             setMigrating(true);
@@ -3354,6 +3519,7 @@ export default function App() {
               sales: [],
               banners: INITIAL_BANNERS,
               benefits: INITIAL_BENEFITS,
+              categories: INITIAL_CATEGORIES,
               heroContent: INITIAL_HERO_CONTENT,
               pricingSettings: INITIAL_PRICING_SETTINGS,
             },
@@ -3361,13 +3527,29 @@ export default function App() {
         }
       } catch (e) {
         console.error("Erro ao carregar catálogo do Supabase:", e);
+        setLoadError(true);
+        setLoading(false);
+        return;
       }
       setLoading(false);
     })();
   }, []);
 
   async function persistCatalog() {
-    const payload = { products, whatsapp, sales, banners, benefits, heroContent, pricingSettings };
+    if (loadError) return;
+    // Safety check: if the catalog was updated elsewhere (another tab/device) since we
+    // loaded it, refuse to blindly overwrite — that is exactly how real data gets lost.
+    try {
+      const { data: current } = await supabase.from("moldeq_catalog").select("updated_at").eq("id", STORAGE_KEY).maybeSingle();
+      if (current && current.updated_at && lastKnownUpdatedAt.current && current.updated_at !== lastKnownUpdatedAt.current) {
+        setSaveStatus("error");
+        setSaveErrorDetail("O catálogo foi alterado em outra aba ou aparelho enquanto você editava aqui. Para não perder nada, recarregue a página antes de continuar editando.");
+        return;
+      }
+    } catch (e) {
+      // if this safety check itself fails, fall through and still attempt to save normally
+    }
+    const payload = { products, whatsapp, sales, banners, benefits, categories, heroContent, pricingSettings };
     const json = JSON.stringify(payload);
     if (json.length > 4_500_000) {
       const sizeMB = (json.length / (1024 * 1024)).toFixed(1);
@@ -3379,8 +3561,10 @@ export default function App() {
     }
     setSaveStatus("saving");
     try {
-      const { error } = await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: payload, updated_at: new Date().toISOString() });
+      const nowIso = new Date().toISOString();
+      const { error } = await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: payload, updated_at: nowIso });
       if (error) throw error;
+      lastKnownUpdatedAt.current = nowIso;
       setSaveStatus("saved");
       setSaveErrorDetail("");
     } catch (e) {
@@ -3391,9 +3575,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (loading || migrating) return;
+    if (loading || migrating || loadError) return;
     persistCatalog();
-  }, [products, whatsapp, sales, banners, benefits, heroContent, pricingSettings, loading, migrating]);
+  }, [products, whatsapp, sales, banners, benefits, categories, heroContent, pricingSettings, loading, migrating, loadError]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -3434,11 +3618,6 @@ export default function App() {
     );
   }, [products, search, categoryFilter]);
 
-  const categories = useMemo(() => {
-    const set = new Set(products.filter((p) => p.active && p.category).map((p) => p.category));
-    return Array.from(set).sort();
-  }, [products]);
-
   const featuredProducts = useMemo(() => {
     return products.filter((p) => p.active && p.featured);
   }, [products]);
@@ -3469,6 +3648,26 @@ export default function App() {
     backgroundPosition: "center, center",
     backgroundAttachment: "scroll, fixed",
   };
+
+  if (loadError) {
+    return (
+      <div style={{ minHeight: "100vh", ...pageBackground, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        {fontImport}
+        <div style={{ textAlign: "center", maxWidth: 360 }}>
+          <p style={{ color: PALETTE.text, fontSize: 15, marginBottom: 8 }}>Não consegui carregar o catálogo agora.</p>
+          <p style={{ color: PALETTE.muted, fontSize: 13, marginBottom: 18 }}>
+            Isso costuma ser uma instabilidade de conexão passageira. Por segurança, o site não mostra nem salva nada até conseguir carregar seus dados de verdade.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading || migrating) {
     return (
@@ -3563,6 +3762,8 @@ export default function App() {
           setBanners={setBanners}
           benefits={benefits}
           setBenefits={setBenefits}
+          categories={categories}
+          setCategories={setCategories}
           heroContent={heroContent}
           setHeroContent={setHeroContent}
           pricingSettings={pricingSettings}
