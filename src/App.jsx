@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Unlock, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles, DollarSign, Percent, Gift, ThumbsUp, Phone, MapPin } from "lucide-react";
+import { useState, useEffect, useRef, useMemo, Component } from "react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles, DollarSign, Percent, Gift, ThumbsUp, Phone, MapPin } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_CATEGORIES, INITIAL_HERO_CONTENT, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
 
@@ -39,15 +39,6 @@ function buildWhatsAppMessage(cart, products, note, customerName) {
   return lines.join("\n");
 }
 
-function fileToDataUri(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 const STORAGE_BUCKET = "product-images";
 
 function dataUriToBlob(dataUri) {
@@ -60,16 +51,33 @@ function dataUriToBlob(dataUri) {
   return new Blob([bytes], { type: mime });
 }
 
-async function uploadBlobToStorage(blob, folder) {
-  const path = folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 9) + ".jpg";
-  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false });
+async function uploadBlobToStorage(blob, folder, extension = "jpg", contentType = "image/jpeg") {
+  const path = folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 9) + "." + extension;
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, { contentType, upsert: false });
   if (error) throw error;
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
 
+function extensionForMime(mime) {
+  if (!mime) return "jpg";
+  if (mime.startsWith("video/")) return mime.split("/")[1] || "mp4";
+  if (mime.includes("png")) return "png";
+  if (mime.includes("webp")) return "webp";
+  return "jpg";
+}
+
 async function uploadDataUriToStorage(dataUri, folder) {
-  return uploadBlobToStorage(dataUriToBlob(dataUri), folder);
+  const blob = dataUriToBlob(dataUri);
+  const ext = extensionForMime(blob.type);
+  return uploadBlobToStorage(blob, folder, ext, blob.type || "image/jpeg");
+}
+
+async function uploadVideoToStorage(file) {
+  const nameExt = file.name && file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
+  const typeExt = file.type && file.type.includes("/") ? file.type.split("/")[1] : "";
+  const ext = nameExt || typeExt || "mp4";
+  return uploadBlobToStorage(file, "videos", ext, file.type || "video/mp4");
 }
 
 // Standard product photo format: square canvas (1:1), fixed pixel size.
@@ -167,6 +175,17 @@ async function compressAndUploadBannerPhoto(file) {
   return uploadBlobToStorage(blob, "banners");
 }
 
+async function listStorageFiles(folder) {
+  const { data, error } = await supabase.storage.from(STORAGE_BUCKET).list(folder, { limit: 500, sortBy: { column: "name", order: "desc" } });
+  if (error) throw error;
+  return (data || [])
+    .filter((f) => f && f.name && f.id)
+    .map((f) => ({
+      name: f.name,
+      url: supabase.storage.from(STORAGE_BUCKET).getPublicUrl(folder + "/" + f.name).data.publicUrl,
+    }));
+}
+
 async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
   let cursor = 0;
@@ -189,9 +208,9 @@ async function migrateBase64ToStorage(products, banners) {
   async function migrateProduct(p) {
     const newMedia = [];
     for (const m of p.media || []) {
-      if (m.type === "image" && typeof m.url === "string" && m.url.startsWith("data:")) {
+      if (typeof m.url === "string" && m.url.startsWith("data:")) {
         try {
-          const url = await uploadDataUriToStorage(m.url, "products");
+          const url = await uploadDataUriToStorage(m.url, m.type === "video" ? "videos" : "products");
           newMedia.push({ ...m, url });
         } catch (e) {
           newMedia.push(m);
@@ -241,11 +260,6 @@ function hasLegacyBase64Images(products, banners) {
   );
   const inBanners = (banners || []).some((b) => b.image && String(b.image).startsWith("data:"));
   return inProducts || inBanners;
-}
-
-function isVideoUrl(url) {
-  if (!url) return false;
-  return /\.(mp4|webm|ogg)(\?.*)?$/i.test(url) || url.startsWith("data:video");
 }
 
 function youtubeEmbedUrl(url) {
@@ -381,11 +395,19 @@ function SizeButton({ size, selected, onClick, disabled }) {
   );
 }
 
-function MediaViewer({ gallery, height = "auto" }) {
+function MediaViewer({ gallery, height = "auto", lazy = true }) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     setIdx(0);
   }, [gallery.length > 0 ? gallery[0].url : null]);
+
+  if (!gallery || gallery.length === 0) {
+    return (
+      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: PALETTE.surface }}>
+        <Package size={28} color={PALETTE.muted} />
+      </div>
+    );
+  }
 
   const safeIdx = Math.min(idx, gallery.length - 1);
   const item = gallery[safeIdx];
@@ -408,6 +430,7 @@ function MediaViewer({ gallery, height = "auto" }) {
         <img
           src={item.url}
           alt=""
+          loading={lazy ? "lazy" : "eager"}
           style={{
             width: "100%",
             height: "100%",
@@ -594,7 +617,7 @@ function useProductVariant(product) {
     setQty(1);
   }, [colorName, sizeName]);
 
-  const media = product.media && product.media.length > 0 ? product.media : [{ type: "image", url: product.images ? product.images[0] : "" }];
+  const media = product.media && product.media.length > 0 ? product.media : [];
   const gallery = selectedColor && selectedColor.image ? [{ type: "image", url: selectedColor.image }, ...media.filter((m) => m.url !== selectedColor.image)] : media;
 
   return { colorName, setColorName, sizeName, setSizeName, qty, setQty, selectedColor, selectedSize, hasColors, hasSizes, outOfStock, maxQty, gallery };
@@ -837,7 +860,7 @@ function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, what
               {cart.map((item, idx) => {
                 const p = products.find((pr) => pr.id === item.productId);
                 if (!p) return null;
-                const thumb = (p.media && p.media[0] && p.media[0].url) || (p.images && p.images[0]) || "";
+                const thumb = (p.media && p.media[0] && p.media[0].url) || "";
                 return (
                   <div key={idx} style={{ display: "flex", gap: 10, borderBottom: "1px solid " + PALETTE.border, paddingBottom: 14 }}>
                     <img src={thumb} alt={p.name} style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
@@ -1019,8 +1042,9 @@ function ProductRail({ title, products, onOpenProduct }) {
           >
             <div style={{ aspectRatio: "1/1", background: PALETTE.surface2 }}>
               <img
-                src={(p.media && p.media[0] && p.media[0].url) || (p.images && p.images[0]) || LOGO_URI}
+                src={(p.media && p.media[0] && p.media[0].url) || LOGO_URI}
                 alt={p.name}
+                loading="lazy"
                 style={{ width: "100%", height: "100%", objectFit: "contain", padding: "6%", boxSizing: "border-box", display: "block" }}
               />
             </div>
@@ -1368,6 +1392,7 @@ function AccountMenu({ user, profile, onOpenAuth, onLogout, onOpenOrders }) {
 function OrdersPage({ user, onBack }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -1377,6 +1402,7 @@ function OrdersPage({ user, onBack }) {
         setOrders(data || []);
       } catch (e) {
         console.error("Erro ao carregar pedidos:", e);
+        setLoadFailed(true);
       }
       setLoading(false);
     })();
@@ -1394,6 +1420,8 @@ function OrdersPage({ user, onBack }) {
 
       {loading ? (
         <p style={{ color: PALETTE.muted, fontSize: 14 }}>Carregando...</p>
+      ) : loadFailed ? (
+        <p style={{ color: PALETTE.danger, fontSize: 14 }}>Não consegui carregar seu histórico agora (falha de conexão). Tente recarregar a página em instantes.</p>
       ) : orders.length === 0 ? (
         <p style={{ color: PALETTE.muted, fontSize: 14 }}>Você ainda não fez nenhum pedido por aqui.</p>
       ) : (
@@ -1439,7 +1467,7 @@ function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenPr
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 36 }}>
         <div>
           <div style={{ position: "relative", aspectRatio: "1/1", background: PALETTE.surface, borderRadius: 16, overflow: "hidden", border: "1px solid " + PALETTE.border }}>
-            <MediaViewer gallery={gallery} />
+            <MediaViewer gallery={gallery} lazy={false} />
           </div>
           {gallery.length > 1 && (
             <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
@@ -1546,6 +1574,85 @@ function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenPr
   );
 }
 
+function MediaLibraryPicker({ folder, onSelect, onClose }) {
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await listStorageFiles(folder);
+        setFiles(list);
+      } catch (e) {
+        console.error(e);
+        setError("Não consegui listar as fotos já enviadas. Tente de novo em instantes.");
+      }
+      setLoading(false);
+    })();
+  }, [folder]);
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(8,9,12,0.7)", zIndex: 70 }} />
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "min(720px, 92vw)",
+          maxHeight: "82vh",
+          overflowY: "auto",
+          background: PALETTE.bg2,
+          border: "1px solid " + PALETTE.border,
+          borderRadius: 16,
+          padding: 20,
+          zIndex: 71,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", color: PALETTE.text, fontSize: 16 }}>Fotos já enviadas</h3>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer" }}>
+            <X size={20} />
+          </button>
+        </div>
+        <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 0, marginBottom: 16 }}>
+          Fotos que já existem no seu Storage, mesmo que não estejam ligadas a nenhum produto agora. Útil para reaproveitar imagens.
+        </p>
+        {loading ? (
+          <p style={{ color: PALETTE.muted, fontSize: 13 }}>Carregando...</p>
+        ) : error ? (
+          <p style={{ color: PALETTE.danger, fontSize: 13 }}>{error}</p>
+        ) : files.length === 0 ? (
+          <p style={{ color: PALETTE.muted, fontSize: 13 }}>Nenhuma foto encontrada nessa pasta.</p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 10 }}>
+            {files.map((f) => (
+              <button
+                key={f.name}
+                onClick={() => onSelect(f.url)}
+                title={f.name}
+                style={{
+                  padding: 0,
+                  border: "1px solid " + PALETTE.border,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  background: PALETTE.surface,
+                  aspectRatio: "1/1",
+                }}
+              >
+                <img src={f.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
   const [form, setForm] = useState(() => {
     const base = JSON.parse(JSON.stringify(product));
@@ -1560,6 +1667,7 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
   const colorPhotoInputRefs = useRef({});
   const [videoUrlDraft, setVideoUrlDraft] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [libraryTarget, setLibraryTarget] = useState(null);
 
   function updateField(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -1619,13 +1727,20 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
   async function handleVideoUpload(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) {
-      alert("Esse vídeo tem mais de 8MB. Prefira colar um link (YouTube ou .mp4 já hospedado) para não travar o salvamento do catálogo.");
+    if (file.size > 20 * 1024 * 1024) {
+      alert("Esse vídeo tem mais de 20MB. Prefira colar um link (YouTube ou .mp4 já hospedado) para o site carregar mais rápido.");
       e.target.value = "";
       return;
     }
-    const uri = await fileToDataUri(file);
-    setForm((f) => ({ ...f, media: [...f.media, { type: "video", url: uri }] }));
+    setUploading(true);
+    try {
+      const url = await uploadVideoToStorage(file);
+      setForm((f) => ({ ...f, media: [...f.media, { type: "video", url }] }));
+    } catch (err) {
+      console.error(err);
+      alert("Não consegui enviar o vídeo. Verifique sua internet e tente de novo.");
+    }
+    setUploading(false);
     e.target.value = "";
   }
 
@@ -1663,7 +1778,18 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
     e.target.value = "";
   }
 
+  function handleLibrarySelect(url) {
+    if (libraryTarget === "media") {
+      setForm((f) => ({ ...f, media: [...f.media, { type: "image", url }] }));
+    } else if (libraryTarget && libraryTarget.startsWith("color:")) {
+      const idx = Number(libraryTarget.split(":")[1]);
+      updateColor(idx, "image", url);
+    }
+    setLibraryTarget(null);
+  }
+
   return (
+    <>
     <div style={{ background: PALETTE.surface2, borderRadius: 12, padding: 18, border: "1px solid " + PALETTE.border, display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
         <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 8 }}>Fotos e vídeo do produto (carrossel)</div>
@@ -1705,6 +1831,13 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
             <ImagePlus size={16} /> {uploading ? "Otimizando..." : "Fotos"}
           </button>
           <input ref={photoInputRef} type="file" accept="image/*" multiple onChange={handlePhotosUpload} style={{ display: "none" }} />
+          <button
+            type="button"
+            onClick={() => setLibraryTarget("media")}
+            style={{ width: 84, height: 84, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, background: "transparent", border: "1px dashed " + PALETTE.border, borderRadius: 8, color: PALETTE.muted, cursor: "pointer", fontSize: 10, textAlign: "center", padding: 4 }}
+          >
+            <ClipboardList size={16} /> Já enviadas
+          </button>
         </div>
         <p style={{ fontSize: 11, color: PALETTE.muted, marginTop: 8 }}>
           As fotos são padronizadas automaticamente para {PRODUCT_PHOTO_SIZE}x{PRODUCT_PHOTO_SIZE}px (quadradas), sem cortar nada da imagem original — isso deixa o catálogo com visual uniforme e carrega mais rápido.
@@ -1868,6 +2001,16 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
                   <ImagePlus size={12} /> Foto da cor
                 </button>
               )}
+              {!c.image && (
+                <button
+                  type="button"
+                  onClick={() => setLibraryTarget("color:" + idx)}
+                  title="Escolher de fotos já enviadas"
+                  style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "1px dashed " + PALETTE.border, color: PALETTE.muted, borderRadius: 8, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}
+                >
+                  <ClipboardList size={12} /> Já enviada
+                </button>
+              )}
               <input
                 ref={(el) => (colorPhotoInputRefs.current[idx] = el)}
                 type="file"
@@ -1946,6 +2089,10 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
         </div>
       </div>
     </div>
+    {libraryTarget && (
+      <MediaLibraryPicker folder={libraryTarget === "media" ? "products" : "colors"} onSelect={handleLibrarySelect} onClose={() => setLibraryTarget(null)} />
+    )}
+    </>
   );
 }
 
@@ -2223,6 +2370,7 @@ function AdminBanners({ banners, setBanners }) {
   const [editingId, setEditingId] = useState(null);
   const fileInputRefs = useRef({});
   const [uploadingId, setUploadingId] = useState(null);
+  const [libraryTargetId, setLibraryTargetId] = useState(null);
 
   function addBanner() {
     const blank = {
@@ -2275,7 +2423,15 @@ function AdminBanners({ banners, setBanners }) {
     e.target.value = "";
   }
 
+  function handleLibrarySelect(url) {
+    if (libraryTargetId) {
+      updateBanner(libraryTargetId, "image", url);
+    }
+    setLibraryTargetId(null);
+  }
+
   return (
+    <>
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2308,6 +2464,13 @@ function AdminBanners({ banners, setBanners }) {
                     <ImageIcon size={13} /> {uploadingId === b.id ? "Enviando..." : "Trocar imagem"}
                   </button>
                   <input ref={(el) => (fileInputRefs.current[b.id] = el)} type="file" accept="image/*" onChange={(e) => handleImage(b.id, e)} style={{ display: "none" }} />
+                  <button
+                    type="button"
+                    onClick={() => setLibraryTargetId(b.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px dashed " + PALETTE.border, color: PALETTE.muted, borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: "pointer" }}
+                  >
+                    <ClipboardList size={13} /> Já enviada
+                  </button>
                 </div>
                 <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: 10 }}>
                   <label style={{ fontSize: 12, color: PALETTE.muted }}>
@@ -2392,6 +2555,8 @@ function AdminBanners({ banners, setBanners }) {
         )}
       </div>
     </div>
+    {libraryTargetId && <MediaLibraryPicker folder="banners" onSelect={handleLibrarySelect} onClose={() => setLibraryTargetId(null)} />}
+    </>
   );
 }
 
@@ -3330,7 +3495,7 @@ function AdminPanel({
                   }}
                 >
                   <img
-                    src={(p.media && p.media[0] && p.media[0].url) || (p.images && p.images[0]) || LOGO_URI}
+                    src={(p.media && p.media[0] && p.media[0].url) || LOGO_URI}
                     alt={p.name}
                     style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }}
                   />
@@ -3392,7 +3557,41 @@ function Toast({ message }) {
   );
 }
 
-export default function App() {
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error, info) {
+    console.error("Erro inesperado no site:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ minHeight: "100vh", background: PALETTE.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ textAlign: "center", maxWidth: 360 }}>
+            <p style={{ color: PALETTE.text, fontSize: 15, marginBottom: 8 }}>Algo deu errado ao carregar essa página.</p>
+            <p style={{ color: PALETTE.muted, fontSize: 13, marginBottom: 18 }}>
+              Nada foi perdido — seus dados continuam salvos no banco. Recarregue a página para tentar de novo.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{ background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+            >
+              Recarregar
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function AppInner() {
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
   const [whatsapp, setWhatsapp] = useState(DEFAULT_WHATSAPP);
   const [sales, setSales] = useState([]);
@@ -3511,8 +3710,10 @@ export default function App() {
           setProducts(loadedProducts);
           setBanners(loadedBanners);
         } else {
+          const nowIso = new Date().toISOString();
           await supabase.from("moldeq_catalog").upsert({
             id: STORAGE_KEY,
+            updated_at: nowIso,
             data: {
               products: INITIAL_PRODUCTS,
               whatsapp: DEFAULT_WHATSAPP,
@@ -3524,6 +3725,7 @@ export default function App() {
               pricingSettings: INITIAL_PRICING_SETTINGS,
             },
           });
+          lastKnownUpdatedAt.current = nowIso;
         }
       } catch (e) {
         console.error("Erro ao carregar catálogo do Supabase:", e);
@@ -3574,9 +3776,38 @@ export default function App() {
     }
   }
 
+  // Debounce + serialize saves: rapid edits are batched into one save after a short
+  // quiet period, and if a save is still in flight when another is due, it queues
+  // instead of firing in parallel — two overlapping writes racing is exactly how an
+  // earlier edit could silently overwrite a later one.
+  const savingRef = useRef(false);
+  const pendingSaveRef = useRef(false);
+  const saveTimerRef = useRef(null);
+
+  async function runQueuedSave() {
+    if (savingRef.current) {
+      pendingSaveRef.current = true;
+      return;
+    }
+    savingRef.current = true;
+    pendingSaveRef.current = false;
+    await persistCatalog();
+    savingRef.current = false;
+    if (pendingSaveRef.current) {
+      pendingSaveRef.current = false;
+      runQueuedSave();
+    }
+  }
+
   useEffect(() => {
     if (loading || migrating || loadError) return;
-    persistCatalog();
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      runQueuedSave();
+    }, 600);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [products, whatsapp, sales, banners, benefits, categories, heroContent, pricingSettings, loading, migrating, loadError]);
 
   function showToast(msg) {
@@ -3770,7 +4001,7 @@ export default function App() {
           setPricingSettings={setPricingSettings}
           saveStatus={saveStatus}
           saveErrorDetail={saveErrorDetail}
-          onRetrySave={persistCatalog}
+          onRetrySave={runQueuedSave}
           onExit={() => setView("shop")}
         />
       ) : (
@@ -3924,5 +4155,13 @@ export default function App() {
 
       <Toast message={toastMsg} />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   );
 }
