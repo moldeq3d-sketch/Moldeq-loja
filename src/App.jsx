@@ -3737,6 +3737,9 @@ function AppInner() {
     })();
   }, []);
 
+  const latestPayloadRef = useRef(null);
+  latestPayloadRef.current = { products, whatsapp, sales, banners, benefits, categories, heroContent, pricingSettings };
+
   async function persistCatalog() {
     if (loadError) return;
     // Safety check: if the catalog was updated elsewhere (another tab/device) since we
@@ -3751,7 +3754,11 @@ function AppInner() {
     } catch (e) {
       // if this safety check itself fails, fall through and still attempt to save normally
     }
-    const payload = { products, whatsapp, sales, banners, benefits, categories, heroContent, pricingSettings };
+    // Always read the ref here (not the closed-over products/whatsapp/... variables) —
+    // this call may be running from an older render's closure (e.g. a queued retry that
+    // fires after newer edits already happened), and the ref always holds the latest
+    // state regardless of which render's closure triggered this save.
+    const payload = latestPayloadRef.current;
     const json = JSON.stringify(payload);
     if (json.length > 4_500_000) {
       const sizeMB = (json.length / (1024 * 1024)).toFixed(1);
