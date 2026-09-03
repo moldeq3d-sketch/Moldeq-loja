@@ -3290,6 +3290,11 @@ function AdminPanel({
     );
   }
 
+  function resetAllRatings() {
+    if (!window.confirm("Isso zera a avaliação e o número de avaliações de TODOS os produtos, para você preencher manualmente depois. Continuar?")) return;
+    setProducts((prev) => prev.map((p) => ({ ...p, rating: 0, reviewCount: 0 })));
+  }
+
   if (!unlocked) {
     return (
       <div style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 20 }}>
@@ -3336,6 +3341,13 @@ function AdminPanel({
             style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.gold, color: PALETTE.gold, borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
           >
             <Star size={14} /> Preencher exemplos
+          </button>
+          <button
+            onClick={resetAllRatings}
+            title="Zera a avaliação e o nº de avaliações de todos os produtos"
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.muted, borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            <Star size={14} /> Zerar avaliações
           </button>
           <button
             onClick={addProduct}
@@ -3607,7 +3619,6 @@ function AppInner() {
   const [loading, setLoading] = useState(true);
   const [migrating, setMigrating] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const lastKnownUpdatedAt = useRef(null);
   const [saveStatus, setSaveStatus] = useState("idle");
   const [saveErrorDetail, setSaveErrorDetail] = useState("");
   const [view, setView] = useState("shop");
@@ -3693,7 +3704,6 @@ function AppInner() {
           setCategories(data.data.categories || INITIAL_CATEGORIES);
           setHeroContent({ ...INITIAL_HERO_CONTENT, ...(data.data.heroContent || {}) });
           setPricingSettings({ ...INITIAL_PRICING_SETTINGS, ...(data.data.pricingSettings || {}) });
-          lastKnownUpdatedAt.current = data.updated_at || null;
 
           if (hasLegacyBase64Images(loadedProducts, loadedBanners)) {
             setMigrating(true);
@@ -3710,10 +3720,9 @@ function AppInner() {
           setProducts(loadedProducts);
           setBanners(loadedBanners);
         } else {
-          const nowIso = new Date().toISOString();
           await supabase.from("moldeq_catalog").upsert({
             id: STORAGE_KEY,
-            updated_at: nowIso,
+            updated_at: new Date().toISOString(),
             data: {
               products: INITIAL_PRODUCTS,
               whatsapp: DEFAULT_WHATSAPP,
@@ -3725,7 +3734,6 @@ function AppInner() {
               pricingSettings: INITIAL_PRICING_SETTINGS,
             },
           });
-          lastKnownUpdatedAt.current = nowIso;
         }
       } catch (e) {
         console.error("Erro ao carregar catálogo do Supabase:", e);
@@ -3742,18 +3750,6 @@ function AppInner() {
 
   async function persistCatalog() {
     if (loadError) return;
-    // Safety check: if the catalog was updated elsewhere (another tab/device) since we
-    // loaded it, refuse to blindly overwrite — that is exactly how real data gets lost.
-    try {
-      const { data: current } = await supabase.from("moldeq_catalog").select("updated_at").eq("id", STORAGE_KEY).maybeSingle();
-      if (current && current.updated_at && lastKnownUpdatedAt.current && current.updated_at !== lastKnownUpdatedAt.current) {
-        setSaveStatus("error");
-        setSaveErrorDetail("O catálogo foi alterado em outra aba ou aparelho enquanto você editava aqui. Para não perder nada, recarregue a página antes de continuar editando.");
-        return;
-      }
-    } catch (e) {
-      // if this safety check itself fails, fall through and still attempt to save normally
-    }
     // Always read the ref here (not the closed-over products/whatsapp/... variables) —
     // this call may be running from an older render's closure (e.g. a queued retry that
     // fires after newer edits already happened), and the ref always holds the latest
@@ -3770,10 +3766,8 @@ function AppInner() {
     }
     setSaveStatus("saving");
     try {
-      const nowIso = new Date().toISOString();
-      const { error } = await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: payload, updated_at: nowIso });
+      const { error } = await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: payload, updated_at: new Date().toISOString() });
       if (error) throw error;
-      lastKnownUpdatedAt.current = nowIso;
       setSaveStatus("saved");
       setSaveErrorDetail("");
     } catch (e) {
