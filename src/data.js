@@ -16,7 +16,11 @@ export const INITIAL_PRICING_SETTINGS = {"filamentPricePerKg": 120, "energyPrice
 export const INITIAL_CATEGORIES = ["Suportes", "Organizadores", "Decoração & Brinquedos"];
 
 export const DEFAULT_WHATSAPP = "5511999999999";
-export const ADMIN_PIN = "2461";
+// ADMIN_PIN foi removido daqui de propósito: agora ele só existe como
+// variável de ambiente no servidor (Vercel → Settings → Environment
+// Variables → ADMIN_PIN) e é checado em api/admin-login.js. Antes ficava
+// em texto puro aqui, embutido no JS que qualquer visitante baixa — não
+// era uma proteção real, só uma comparação no navegador.
 export const ADMIN_ACCESS_KEY = "camada-oculta-7x";
 export const STORAGE_KEY = "moldeq_catalog_v1";
 

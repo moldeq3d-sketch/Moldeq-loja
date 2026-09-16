@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Component } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles, DollarSign, Percent, Gift, ThumbsUp, Phone, MapPin } from "lucide-react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles, DollarSign, Percent, Gift, ThumbsUp, Phone, MapPin, Share2 } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_CATEGORIES, INITIAL_HERO_CONTENT, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_PIN, ADMIN_ACCESS_KEY, STORAGE_KEY } from "./data";
+import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_CATEGORIES, INITIAL_HERO_CONTENT, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_ACCESS_KEY } from "./data";
 
 function formatBRL(v) {
   return "R$ " + Number(v).toFixed(2).replace(".", ",");
@@ -22,7 +22,7 @@ function buildWhatsAppMessage(cart, products, note, customerName) {
   cart.forEach((item) => {
     const p = products.find((pr) => pr.id === item.productId);
     if (!p) return;
-    const subtotal = p.price * item.qty;
+    const subtotal = getEffectivePrice(p, item.colorName) * item.qty;
     total += subtotal;
     let desc = "• " + p.name;
     if (item.colorName) desc += " — cor " + item.colorName;
@@ -600,6 +600,12 @@ function BannerCarousel({ banners }) {
   );
 }
 
+function getEffectivePrice(product, colorName) {
+  const color = (product.colors || []).find((c) => c.name === colorName);
+  if (color && color.price && color.price > 0) return color.price;
+  return product.price;
+}
+
 function useProductVariant(product) {
   const availableColors = (product.colors || []).filter((c) => c.stock > 0);
   const [colorName, setColorName] = useState(availableColors[0] ? availableColors[0].name : (product.colors && product.colors[0] ? product.colors[0].name : ""));
@@ -612,6 +618,7 @@ function useProductVariant(product) {
   const hasSizes = (product.sizes || []).length > 0;
   const outOfStock = (hasColors && availableColors.length === 0) || (hasSizes && availableSizes.length === 0);
   const maxQty = Math.max(1, Math.min(selectedColor ? selectedColor.stock : Infinity, selectedSize ? selectedSize.stock : Infinity));
+  const effectivePrice = selectedColor && selectedColor.price > 0 ? selectedColor.price : product.price;
 
   useEffect(() => {
     setQty(1);
@@ -620,7 +627,7 @@ function useProductVariant(product) {
   const media = product.media && product.media.length > 0 ? product.media : [];
   const gallery = selectedColor && selectedColor.image ? [{ type: "image", url: selectedColor.image }, ...media.filter((m) => m.url !== selectedColor.image)] : media;
 
-  return { colorName, setColorName, sizeName, setSizeName, qty, setQty, selectedColor, selectedSize, hasColors, hasSizes, outOfStock, maxQty, gallery };
+  return { colorName, setColorName, sizeName, setSizeName, qty, setQty, selectedColor, selectedSize, hasColors, hasSizes, outOfStock, maxQty, gallery, effectivePrice };
 }
 
 function StarRating({ rating = 0, size = 13, count, showCount = true }) {
@@ -648,7 +655,7 @@ function StarRating({ rating = 0, size = 13, count, showCount = true }) {
 
 function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
   const v = useProductVariant(product);
-  const { colorName, setColorName, sizeName, setSizeName, qty, setQty, hasColors, hasSizes, outOfStock, maxQty, gallery } = v;
+  const { colorName, setColorName, sizeName, setSizeName, qty, setQty, hasColors, hasSizes, outOfStock, maxQty, gallery, effectivePrice } = v;
 
   return (
     <div
@@ -732,7 +739,7 @@ function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
         </div>
 
         <div style={{ minHeight: 24 }}>
-          <PriceDisplay price={product.price} originalPrice={product.originalPrice} priceFrom={product.priceFrom} />
+          <PriceDisplay price={effectivePrice} originalPrice={product.originalPrice} priceFrom={product.priceFrom} />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: hasColors ? 26 : 0 }}>
@@ -812,7 +819,7 @@ function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
 function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, whatsapp, note, setNote, onSent, customerName }) {
   const total = cart.reduce((sum, item) => {
     const p = products.find((pr) => pr.id === item.productId);
-    return sum + (p ? p.price * item.qty : 0);
+    return sum + (p ? getEffectivePrice(p, item.colorName) * item.qty : 0);
   }, 0);
 
   return (
@@ -879,7 +886,7 @@ function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, what
                         <button onClick={() => onQtyChange(idx, 1)} style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.text, cursor: "pointer", padding: "2px 6px" }}>
                           <Plus size={12} />
                         </button>
-                        <span style={{ marginLeft: "auto", fontSize: 13, color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(p.price * item.qty)}</span>
+                        <span style={{ marginLeft: "auto", fontSize: 13, color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(p, item.colorName) * item.qty)}</span>
                       </div>
                     </div>
                     <button onClick={() => onRemove(idx)} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", alignSelf: "flex-start" }}>
@@ -1002,7 +1009,7 @@ const railArrowStyle = {
   flexShrink: 0,
 };
 
-function ProductRail({ title, products, onOpenProduct }) {
+function ProductRail({ title, products, onOpenProduct, onSeeAll }) {
   const scrollRef = useRef(null);
   if (!products || products.length === 0) return null;
 
@@ -1012,9 +1019,19 @@ function ProductRail({ title, products, onOpenProduct }) {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 0" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, color: PALETTE.text }}>{title}</h2>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 }}>
+          <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, color: PALETTE.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</h2>
+          {onSeeAll && (
+            <button
+              onClick={onSeeAll}
+              style={{ background: "transparent", border: "none", color: PALETTE.gold, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
+            >
+              Ver tudo →
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <button onClick={() => scrollByAmount(-1)} style={railArrowStyle}>
             <ChevronLeft size={16} />
           </button>
@@ -1452,17 +1469,49 @@ function OrdersPage({ user, onBack }) {
 
 function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenProduct, toast }) {
   const v = useProductVariant(product);
-  const { colorName, setColorName, sizeName, setSizeName, qty, setQty, hasColors, hasSizes, outOfStock, maxQty, gallery } = v;
+  const { colorName, setColorName, sizeName, setSizeName, qty, setQty, hasColors, hasSizes, outOfStock, maxQty, gallery, effectivePrice } = v;
   const related = allProducts.filter((p) => p.id !== product.id && p.active).slice(0, 10);
+
+  async function shareProduct() {
+    let shareUrl = window.location.href;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("produto", product.id);
+      shareUrl = url.toString();
+    } catch (e) {}
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: product.name, text: product.name + " — " + formatBRL(effectivePrice), url: shareUrl });
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast("Link do produto copiado!");
+    } catch (e) {
+      toast("Não consegui copiar o link.");
+    }
+  }
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px 80px" }}>
-      <button
-        onClick={onBack}
-        style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", fontSize: 13, marginBottom: 18, padding: 0 }}
-      >
-        <ChevronLeft size={15} /> Voltar ao catálogo
-      </button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+        <button
+          onClick={onBack}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", fontSize: 13, padding: 0 }}
+        >
+          <ChevronLeft size={15} /> Voltar ao catálogo
+        </button>
+        <button
+          onClick={shareProduct}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + PALETTE.border, color: PALETTE.text, cursor: "pointer", fontSize: 13, padding: "8px 14px", borderRadius: 8 }}
+        >
+          <Share2 size={15} /> Compartilhar
+        </button>
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 36 }}>
         <div>
@@ -1492,7 +1541,7 @@ function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenPr
             <StarRating rating={product.rating} count={product.reviewCount} size={15} />
           </div>
           <div style={{ marginTop: 14 }}>
-            <PriceDisplay price={product.price} originalPrice={product.originalPrice} priceFrom={product.priceFrom} size="large" />
+            <PriceDisplay price={effectivePrice} originalPrice={product.originalPrice} priceFrom={product.priceFrom} size="large" />
           </div>
           <p style={{ marginTop: 14, fontSize: 14, color: PALETTE.muted, lineHeight: 1.6 }}>{product.description}</p>
 
@@ -1676,13 +1725,13 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
   function updateColor(idx, field, value) {
     setForm((f) => {
       const colors = [...f.colors];
-      colors[idx] = { ...colors[idx], [field]: field === "stock" ? Number(value) : value };
+      colors[idx] = { ...colors[idx], [field]: field === "stock" || field === "price" ? Number(value) : value };
       return { ...f, colors };
     });
   }
 
   function addColor() {
-    setForm((f) => ({ ...f, colors: [...f.colors, { name: "Nova cor", hex: "#D9A44C", stock: 0, image: null }] }));
+    setForm((f) => ({ ...f, colors: [...f.colors, { name: "Nova cor", hex: "#D9A44C", stock: 0, price: 0, image: null }] }));
   }
 
   function removeColor(idx) {
@@ -1957,7 +2006,9 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
       </div>
 
       <div>
-        <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 6 }}>Cores e estoque</div>
+        <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 6 }}>
+          Cores, estoque e preço — deixe o campo de preço em branco para usar o preço padrão do produto nessa cor
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {form.colors.map((c, idx) => (
             <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1979,6 +2030,16 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
                 onChange={(e) => updateColor(idx, "stock", e.target.value)}
                 placeholder="Estoque"
                 style={{ width: 80, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "6px 8px", fontSize: 13 }}
+              />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={c.price || ""}
+                onChange={(e) => updateColor(idx, "price", e.target.value === "" ? 0 : Number(e.target.value))}
+                placeholder={"Preço padrão"}
+                title="Preço específico desta cor (opcional) — deixe em branco para usar o preço do produto"
+                style={{ width: 100, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "6px 8px", fontSize: 13 }}
               />
               {c.image ? (
                 <div style={{ position: "relative", width: 30, height: 30, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
@@ -2172,6 +2233,7 @@ function AdminStockSales({ products, setProducts, sales, setSales }) {
       })
     );
 
+    const unitPrice = getEffectivePrice(saleProduct, hasColors ? saleColor : "");
     const entry = {
       id: uid(),
       date: new Date().toISOString(),
@@ -2180,8 +2242,8 @@ function AdminStockSales({ products, setProducts, sales, setSales }) {
       colorName: hasColors ? saleColor : "",
       sizeName: hasSizes ? saleSize : "",
       qty,
-      unitPrice: saleProduct.price,
-      total: saleProduct.price * qty,
+      unitPrice,
+      total: unitPrice * qty,
     };
     setSales((prev) => [entry, ...prev]);
     setSaleQty(1);
@@ -2276,7 +2338,7 @@ function AdminStockSales({ products, setProducts, sales, setSales }) {
           </label>
           {saleProduct && (
             <div style={{ fontSize: 13, color: PALETTE.muted, paddingBottom: 8 }}>
-              Total: <span style={{ color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(saleProduct.price * Math.max(1, Number(saleQty) || 1))}</span>
+              Total: <span style={{ color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(saleProduct, saleColor) * Math.max(1, Number(saleQty) || 1))}</span>
             </div>
           )}
           <button
@@ -2759,7 +2821,7 @@ function CustomOrderButton({ whatsapp }) {
   );
 }
 
-function AdminCategories({ categories, setCategories, products }) {
+function AdminCategories({ categories, setCategories, products, homeItemsPerSection, setHomeItemsPerSection }) {
   const [draft, setDraft] = useState("");
 
   function addCategory() {
@@ -2779,15 +2841,42 @@ function AdminCategories({ categories, setCategories, products }) {
     setCategories((prev) => prev.filter((c) => c !== name));
   }
 
+  function moveCategory(idx, dir) {
+    setCategories((prev) => {
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.splice(newIdx, 0, item);
+      return next;
+    });
+  }
+
   return (
     <div style={{ marginTop: 28 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <LayoutGrid size={16} color={PALETTE.gold} />
-        <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Categorias</h3>
+        <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Categorias e organização da home</h3>
       </div>
       <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 0, marginBottom: 14 }}>
-        Controla o filtro "Categorias" da loja e a lista que aparece na edição de cada produto.
+        Controla o filtro "Categorias" da loja, a lista na edição de produto, e também a ordem dos carrosséis por nicho na página inicial.
       </p>
+
+      <label style={{ display: "block", fontSize: 12, color: PALETTE.muted, marginBottom: 18, maxWidth: 260 }}>
+        Itens por carrossel na home
+        <input
+          type="number"
+          min="3"
+          max="20"
+          value={homeItemsPerSection}
+          onChange={(e) => setHomeItemsPerSection(Math.max(3, Math.min(20, Number(e.target.value) || 8)))}
+          style={{ display: "block", width: "100%", marginTop: 4, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+        />
+        <span style={{ display: "block", fontSize: 11, color: PALETTE.muted, marginTop: 4 }}>
+          Quantos produtos aparecem em cada fileira antes de precisar clicar em "Ver tudo". Deixa a home mais leve.
+        </span>
+      </label>
+
       <div style={{ display: "flex", gap: 8, marginBottom: 14, maxWidth: 420 }}>
         <input
           value={draft}
@@ -2813,12 +2902,29 @@ function AdminCategories({ categories, setCategories, products }) {
         <p style={{ fontSize: 12, color: PALETTE.muted }}>Nenhuma categoria cadastrada ainda.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 420 }}>
-          {categories.map((c) => (
+          <p style={{ fontSize: 11, color: PALETTE.muted, margin: "0 0 2px" }}>A ordem daqui é a mesma ordem dos carrosséis na home.</p>
+          {categories.map((c, idx) => (
             <div key={c} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, padding: "8px 12px" }}>
               <span style={{ fontSize: 13, color: PALETTE.text }}>{c}</span>
-              <button onClick={() => removeCategory(c)} style={{ background: "transparent", border: "none", color: PALETTE.danger, cursor: "pointer" }}>
-                <Trash2 size={14} />
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <button
+                  onClick={() => moveCategory(idx, -1)}
+                  disabled={idx === 0}
+                  style={{ background: "transparent", border: "1px solid " + PALETTE.border, borderRadius: 6, color: idx === 0 ? PALETTE.border : PALETTE.muted, cursor: idx === 0 ? "default" : "pointer", padding: 4 }}
+                >
+                  <ChevronUp size={14} />
+                </button>
+                <button
+                  onClick={() => moveCategory(idx, 1)}
+                  disabled={idx === categories.length - 1}
+                  style={{ background: "transparent", border: "1px solid " + PALETTE.border, borderRadius: 6, color: idx === categories.length - 1 ? PALETTE.border : PALETTE.muted, cursor: idx === categories.length - 1 ? "default" : "pointer", padding: 4 }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                <button onClick={() => removeCategory(c)} style={{ background: "transparent", border: "none", color: PALETTE.danger, cursor: "pointer", marginLeft: 4 }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -3222,6 +3328,8 @@ function AdminPanel({
   setBenefits,
   categories,
   setCategories,
+  homeItemsPerSection,
+  setHomeItemsPerSection,
   heroContent,
   setHeroContent,
   pricingSettings,
@@ -3230,9 +3338,42 @@ function AdminPanel({
   saveErrorDetail,
   onRetrySave,
   onExit,
+  adminTokenRef,
+  onUnlockedLoad,
 }) {
   const [pin, setPin] = useState("");
   const [unlocked, setUnlocked] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  async function tryUnlock() {
+    if (loggingIn) return;
+    setLoginError("");
+    setLoggingIn(true);
+    try {
+      const res = await fetch("/api/admin-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.token) {
+        setLoginError(body.error || "PIN incorreto");
+        return;
+      }
+      adminTokenRef.current = body.token;
+      try {
+        await onUnlockedLoad();
+      } catch (e) {
+        console.error("Erro ao carregar dados do painel:", e);
+      }
+      setUnlocked(true);
+    } catch (e) {
+      setLoginError("Não foi possível conectar. Verifique sua internet e tente de novo.");
+    } finally {
+      setLoggingIn(false);
+    }
+  }
   const [editingId, setEditingId] = useState(null);
   const [waDraft, setWaDraft] = useState(whatsapp);
   const [tab, setTab] = useState("products");
@@ -3306,19 +3447,21 @@ function AdminPanel({
           value={pin}
           onChange={(e) => setPin(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && pin === ADMIN_PIN) setUnlocked(true);
+            if (e.key === "Enter") tryUnlock();
           }}
           placeholder="PIN"
+          disabled={loggingIn}
           style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "10px 14px", fontSize: 15, textAlign: "center", width: 140 }}
         />
+        {loginError && (
+          <p style={{ color: "#e4664a", fontSize: 13, margin: 0, textAlign: "center", maxWidth: 260 }}>{loginError}</p>
+        )}
         <button
-          onClick={() => {
-            if (pin === ADMIN_PIN) setUnlocked(true);
-            else alert("PIN incorreto");
-          }}
-          style={{ background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}
+          onClick={tryUnlock}
+          disabled={loggingIn}
+          style={{ background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "10px 22px", fontWeight: 700, cursor: loggingIn ? "default" : "pointer", opacity: loggingIn ? 0.7 : 1 }}
         >
-          Entrar
+          {loggingIn ? "Entrando..." : "Entrar"}
         </button>
         <button onClick={onExit} style={{ background: "transparent", border: "none", color: PALETTE.muted, fontSize: 13, cursor: "pointer", marginTop: 4 }}>
           ← Voltar para a loja
@@ -3535,7 +3678,7 @@ function AdminPanel({
         <>
           <AdminBanners banners={banners} setBanners={setBanners} />
           <AdminBenefits benefits={benefits} setBenefits={setBenefits} />
-          <AdminCategories categories={categories} setCategories={setCategories} products={products} />
+          <AdminCategories categories={categories} setCategories={setCategories} products={products} homeItemsPerSection={homeItemsPerSection} setHomeItemsPerSection={setHomeItemsPerSection} />
           <AdminHeroText heroContent={heroContent} setHeroContent={setHeroContent} />
         </>
       ) : (
@@ -3610,6 +3753,7 @@ function AppInner() {
   const [banners, setBanners] = useState(INITIAL_BANNERS);
   const [benefits, setBenefits] = useState(INITIAL_BENEFITS);
   const [categories, setCategories] = useState(INITIAL_CATEGORIES);
+  const [homeItemsPerSection, setHomeItemsPerSection] = useState(8);
   const [heroContent, setHeroContent] = useState(INITIAL_HERO_CONTENT);
   const [pricingSettings, setPricingSettings] = useState(INITIAL_PRICING_SETTINGS);
   const [selectedProductId, setSelectedProductId] = useState(null);
@@ -3635,8 +3779,34 @@ function AppInner() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("acesso") === ADMIN_ACCESS_KEY) {
         setView("admin");
+      } else if (params.get("produto")) {
+        setSelectedProductId(params.get("produto"));
+        setView("product");
+      } else if (params.get("categoria")) {
+        setCategoryFilter(params.get("categoria"));
       }
     } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    function handlePopState() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const produtoId = params.get("produto");
+        if (produtoId) {
+          setSelectedProductId(produtoId);
+          setView("product");
+        } else if (params.get("acesso") === ADMIN_ACCESS_KEY) {
+          setView("admin");
+        } else {
+          setView("shop");
+          setSelectedProductId(null);
+          setCategoryFilter(params.get("categoria") || "");
+        }
+      } catch (e) {}
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -3682,7 +3852,7 @@ function AppInner() {
     try {
       const items = cartItems.map((item) => {
         const p = products.find((pr) => pr.id === item.productId);
-        return { productId: item.productId, name: p ? p.name : "", colorName: item.colorName, sizeName: item.sizeName, qty: item.qty, unitPrice: p ? p.price : 0 };
+        return { productId: item.productId, name: p ? p.name : "", colorName: item.colorName, sizeName: item.sizeName, qty: item.qty, unitPrice: p ? getEffectivePrice(p, item.colorName) : 0 };
       });
       await supabase.from("orders").insert({ user_id: user.id, items, total, note: orderNote || null });
     } catch (e) {
@@ -3690,20 +3860,29 @@ function AppInner() {
     }
   }
 
+  // Carrega o catálogo via /api/catalog (rota pública, lê no servidor com a
+  // service role key) em vez de falar direto com o Supabase usando a anon
+  // key. Essa rota nunca devolve "sales" nem "pricingSettings" — por isso
+  // eles não aparecem aqui; continuam com o valor padrão local até um admin
+  // desbloquear o painel (ver onUnlockedLoad, passado para AdminPanel), que
+  // busca os valores reais em /api/admin-catalog.
+  const adminTokenRef = useRef(null);
+
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await supabase.from("moldeq_catalog").select("data, updated_at").eq("id", STORAGE_KEY).maybeSingle();
-        if (error) throw error;
-        if (data && data.data) {
-          let loadedProducts = data.data.products || INITIAL_PRODUCTS;
-          let loadedBanners = data.data.banners || INITIAL_BANNERS;
-          setWhatsapp(data.data.whatsapp || DEFAULT_WHATSAPP);
-          setSales(data.data.sales || []);
-          setBenefits(data.data.benefits || INITIAL_BENEFITS);
-          setCategories(data.data.categories || INITIAL_CATEGORIES);
-          setHeroContent({ ...INITIAL_HERO_CONTENT, ...(data.data.heroContent || {}) });
-          setPricingSettings({ ...INITIAL_PRICING_SETTINGS, ...(data.data.pricingSettings || {}) });
+        const res = await fetch("/api/catalog");
+        if (!res.ok) throw new Error("Falha ao carregar catálogo");
+        const { data } = await res.json();
+
+        if (data) {
+          let loadedProducts = data.products || INITIAL_PRODUCTS;
+          let loadedBanners = data.banners || INITIAL_BANNERS;
+          setWhatsapp(data.whatsapp || DEFAULT_WHATSAPP);
+          setBenefits(data.benefits || INITIAL_BENEFITS);
+          setCategories(data.categories || INITIAL_CATEGORIES);
+          setHomeItemsPerSection(data.homeItemsPerSection || 8);
+          setHeroContent({ ...INITIAL_HERO_CONTENT, ...(data.heroContent || {}) });
 
           if (hasLegacyBase64Images(loadedProducts, loadedBanners)) {
             setMigrating(true);
@@ -3719,24 +3898,13 @@ function AppInner() {
 
           setProducts(loadedProducts);
           setBanners(loadedBanners);
-        } else {
-          await supabase.from("moldeq_catalog").upsert({
-            id: STORAGE_KEY,
-            updated_at: new Date().toISOString(),
-            data: {
-              products: INITIAL_PRODUCTS,
-              whatsapp: DEFAULT_WHATSAPP,
-              sales: [],
-              banners: INITIAL_BANNERS,
-              benefits: INITIAL_BENEFITS,
-              categories: INITIAL_CATEGORIES,
-              heroContent: INITIAL_HERO_CONTENT,
-              pricingSettings: INITIAL_PRICING_SETTINGS,
-            },
-          });
         }
+        // Se data vier null, o banco ainda está vazio (primeira vez) — os
+        // valores padrão locais (useState(INITIAL_PRODUCTS) etc.) já cobrem
+        // esse caso, e nada é gravado de forma anônima. A primeira gravação
+        // real acontece quando um admin loga e salva pelo painel.
       } catch (e) {
-        console.error("Erro ao carregar catálogo do Supabase:", e);
+        console.error("Erro ao carregar catálogo:", e);
         setLoadError(true);
         setLoading(false);
         return;
@@ -3745,11 +3913,34 @@ function AppInner() {
     })();
   }, []);
 
+  // Chamado pelo AdminPanel assim que o PIN é validado em /api/admin-login,
+  // pra buscar os valores reais de sales/pricingSettings (que a rota pública
+  // nunca inclui) antes de mostrar o painel.
+  async function loadAdminOnlyData() {
+    const res = await fetch("/api/admin-catalog", {
+      headers: { Authorization: "Bearer " + adminTokenRef.current },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || "Falha ao carregar dados do painel");
+    const data = body.data;
+    if (data) {
+      setSales(data.sales || []);
+      setPricingSettings({ ...INITIAL_PRICING_SETTINGS, ...(data.pricingSettings || {}) });
+    }
+  }
+
   const latestPayloadRef = useRef(null);
-  latestPayloadRef.current = { products, whatsapp, sales, banners, benefits, categories, heroContent, pricingSettings };
+  latestPayloadRef.current = { products, whatsapp, sales, banners, benefits, categories, homeItemsPerSection, heroContent, pricingSettings };
 
   async function persistCatalog() {
     if (loadError) return;
+    // Sem sessão de admin válida não há o que salvar — evita qualquer
+    // tentativa de gravação anônima (antes, qualquer código rodando no
+    // navegador com a anon key conseguia escrever direto na tabela).
+    if (!adminTokenRef.current) {
+      setSaveStatus("idle");
+      return;
+    }
     // Always read the ref here (not the closed-over products/whatsapp/... variables) —
     // this call may be running from an older render's closure (e.g. a queued retry that
     // fires after newer edits already happened), and the ref always holds the latest
@@ -3766,14 +3957,23 @@ function AppInner() {
     }
     setSaveStatus("saving");
     try {
-      const { error } = await supabase.from("moldeq_catalog").upsert({ id: STORAGE_KEY, data: payload, updated_at: new Date().toISOString() });
-      if (error) throw error;
+      const res = await fetch("/api/admin-save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + adminTokenRef.current },
+        body: JSON.stringify({ data: payload }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Falha ao salvar");
       setSaveStatus("saved");
       setSaveErrorDetail("");
     } catch (e) {
-      console.error("Erro ao salvar catálogo no Supabase:", e);
+      console.error("Erro ao salvar catálogo:", e);
       setSaveStatus("error");
-      setSaveErrorDetail("Não consegui salvar as últimas alterações (falha de conexão com o banco de dados). Elas ainda não estão seguras — tente novamente antes de sair da página.");
+      setSaveErrorDetail(
+        e && e.message === "Sessão expirada. Faça login de novo antes de salvar."
+          ? "Sua sessão de admin expirou. Volte para a loja e entre de novo com o PIN antes de continuar editando."
+          : "Não consegui salvar as últimas alterações (falha de conexão com o banco de dados). Elas ainda não estão seguras — tente novamente antes de sair da página."
+      );
     }
   }
 
@@ -3809,7 +4009,7 @@ function AppInner() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [products, whatsapp, sales, banners, benefits, categories, heroContent, pricingSettings, loading, migrating, loadError]);
+  }, [products, whatsapp, sales, banners, benefits, categories, homeItemsPerSection, heroContent, pricingSettings, loading, migrating, loadError]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -3854,17 +4054,57 @@ function AppInner() {
     return products.filter((p) => p.active && p.featured);
   }, [products]);
 
+  const homeSections = useMemo(() => {
+    if (categories.length === 0) return [];
+    const shown = new Set();
+    const sections = categories
+      .map((cat) => {
+        const items = products.filter((p) => p.active && p.category === cat);
+        items.forEach((p) => shown.add(p.id));
+        return { title: cat, category: cat, items: items.slice(0, homeItemsPerSection), total: items.length };
+      })
+      .filter((s) => s.items.length > 0);
+    const leftovers = products.filter((p) => p.active && !shown.has(p.id));
+    if (leftovers.length > 0) {
+      sections.push({ title: "Outros produtos", category: "", items: leftovers.slice(0, homeItemsPerSection), total: leftovers.length });
+    }
+    return sections;
+  }, [products, categories, homeItemsPerSection]);
+
   const selectedProduct = selectedProductId ? products.find((p) => p.id === selectedProductId) : null;
+
+  function selectCategory(categoryName) {
+    setCategoryFilter(categoryName);
+    try {
+      const url = new URL(window.location.href);
+      if (categoryName) {
+        url.searchParams.set("categoria", categoryName);
+      } else {
+        url.searchParams.delete("categoria");
+      }
+      window.history.pushState(null, "", url.toString());
+    } catch (e) {}
+  }
 
   function openProduct(id) {
     setSelectedProductId(id);
     setView("product");
     window.scrollTo({ top: 0, behavior: "instant" });
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("produto", id);
+      window.history.pushState(null, "", url.toString());
+    } catch (e) {}
   }
 
   function closeProduct() {
     setView("shop");
     setSelectedProductId(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("produto");
+      window.history.pushState(null, "", url.toString());
+    } catch (e) {}
   }
 
   const fontImport = (
@@ -3922,7 +4162,7 @@ function AppInner() {
             <img src={LOGO_URI} alt="Moldeq" style={{ height: 34 }} />
           </div>
           {view === "shop" && (
-            <CategoryFilter categories={categories} selected={categoryFilter} onSelect={setCategoryFilter} />
+            <CategoryFilter categories={categories} selected={categoryFilter} onSelect={selectCategory} />
           )}
           {view === "shop" && (
             <div style={{ flex: 1, maxWidth: 320, position: "relative" }}>
@@ -3996,6 +4236,8 @@ function AppInner() {
           setBenefits={setBenefits}
           categories={categories}
           setCategories={setCategories}
+          homeItemsPerSection={homeItemsPerSection}
+          setHomeItemsPerSection={setHomeItemsPerSection}
           heroContent={heroContent}
           setHeroContent={setHeroContent}
           pricingSettings={pricingSettings}
@@ -4004,44 +4246,77 @@ function AppInner() {
           saveErrorDetail={saveErrorDetail}
           onRetrySave={runQueuedSave}
           onExit={() => setView("shop")}
+          adminTokenRef={adminTokenRef}
+          onUnlockedLoad={loadAdminOnlyData}
         />
       ) : (
         <>
           {view === "shop" ? (
             <>
               <BannerCarousel banners={banners} />
-              <BenefitsStrip benefits={benefits} />
-              <ProductRail title="Mais vendidos" products={featuredProducts} onOpenProduct={openProduct} />
-              <section style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 20px 30px", textAlign: "center" }}>
-                <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: PALETTE.gold, marginBottom: 14 }}>
-                  {heroContent.eyebrow}
+              {!categoryFilter && (
+                <>
+                  <BenefitsStrip benefits={benefits} />
+                  <ProductRail title="Mais vendidos" products={featuredProducts} onOpenProduct={openProduct} />
+                  <section style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 20px 30px", textAlign: "center" }}>
+                    <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: PALETTE.gold, marginBottom: 14 }}>
+                      {heroContent.eyebrow}
+                    </div>
+                    <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(28px, 5vw, 46px)", margin: "0 0 14px", lineHeight: 1.15 }}>
+                      {heroContent.title.split("\n").map((line, i, arr) => (
+                        <span key={i}>
+                          {line}
+                          {i < arr.length - 1 && <br />}
+                        </span>
+                      ))}
+                    </h1>
+                    <p style={{ color: PALETTE.muted, maxWidth: 520, margin: "0 auto", fontSize: 15, lineHeight: 1.6 }}>{heroContent.subtitle}</p>
+                  </section>
+                </>
+              )}
+
+              {categoryFilter && (
+                <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 20px 0" }}>
+                  <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(24px, 4vw, 34px)", color: PALETTE.text, margin: 0 }}>{categoryFilter}</h1>
+                  <p style={{ color: PALETTE.muted, fontSize: 14, marginTop: 6 }}>
+                    {visibleProducts.length} produto{visibleProducts.length === 1 ? "" : "s"} nesta categoria
+                  </p>
                 </div>
-                <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(28px, 5vw, 46px)", margin: "0 0 14px", lineHeight: 1.15 }}>
-                  {heroContent.title.split("\n").map((line, i, arr) => (
-                    <span key={i}>
-                      {line}
-                      {i < arr.length - 1 && <br />}
-                    </span>
-                  ))}
-                </h1>
-                <p style={{ color: PALETTE.muted, maxWidth: 520, margin: "0 auto", fontSize: 15, lineHeight: 1.6 }}>{heroContent.subtitle}</p>
-              </section>
+              )}
 
               <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 20px" }}>
                 <LayerLines height={22} opacity={0.55} />
               </div>
 
-              <main id="catalogo" style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 20px 100px" }}>
-                {visibleProducts.length === 0 ? (
-                  <p style={{ textAlign: "center", color: PALETTE.muted, marginTop: 60 }}>Nenhum produto encontrado para "{search}".</p>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 18 }}>
-                    {visibleProducts.map((p) => (
-                      <ProductCard key={p.id} product={p} onAddToCart={addToCart} onOpenProduct={openProduct} toast={showToast} />
-                    ))}
-                  </div>
-                )}
-              </main>
+              {!categoryFilter && !search.trim() && categories.length > 0 ? (
+                <div id="catalogo" style={{ paddingBottom: 60 }}>
+                  {homeSections.length === 0 ? (
+                    <p style={{ textAlign: "center", color: PALETTE.muted, marginTop: 60 }}>Nenhum produto ativo no catálogo ainda.</p>
+                  ) : (
+                    homeSections.map((section) => (
+                      <ProductRail
+                        key={section.title}
+                        title={section.title}
+                        products={section.items}
+                        onOpenProduct={openProduct}
+                        onSeeAll={section.category ? () => selectCategory(section.category) : undefined}
+                      />
+                    ))
+                  )}
+                </div>
+              ) : (
+                <main id="catalogo" style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 20px 100px" }}>
+                  {visibleProducts.length === 0 ? (
+                    <p style={{ textAlign: "center", color: PALETTE.muted, marginTop: 60 }}>Nenhum produto encontrado para "{search}".</p>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 18 }}>
+                      {visibleProducts.map((p) => (
+                        <ProductCard key={p.id} product={p} onAddToCart={addToCart} onOpenProduct={openProduct} toast={showToast} />
+                      ))}
+                    </div>
+                  )}
+                </main>
+              )}
 
               <footer style={{ borderTop: "1px solid " + PALETTE.border, padding: "28px 20px 40px", textAlign: "center", color: PALETTE.muted, fontSize: 12, position: "relative" }}>
                 Moldeq · Catálogo oficial de produtos 3D · Pedidos via WhatsApp
@@ -4093,7 +4368,7 @@ function AppInner() {
               showToast("Pedido aberto no WhatsApp!");
               const total = cart.reduce((sum, item) => {
                 const p = products.find((pr) => pr.id === item.productId);
-                return sum + (p ? p.price * item.qty : 0);
+                return sum + (p ? getEffectivePrice(p, item.colorName) * item.qty : 0);
               }, 0);
               saveOrderRecord(cart, total, note);
             }}
