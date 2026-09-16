@@ -22,7 +22,7 @@ function buildWhatsAppMessage(cart, products, note, customerName) {
   cart.forEach((item) => {
     const p = products.find((pr) => pr.id === item.productId);
     if (!p) return;
-    const subtotal = getEffectivePrice(p, item.colorName) * item.qty;
+    const subtotal = getEffectivePrice(p, item.colorName, item.sizeName) * item.qty;
     total += subtotal;
     let desc = "• " + p.name;
     if (item.colorName) desc += " — cor " + item.colorName;
@@ -600,8 +600,10 @@ function BannerCarousel({ banners }) {
   );
 }
 
-function getEffectivePrice(product, colorName) {
-  const color = (product.colors || []).find((c) => c.name === colorName);
+function getEffectivePrice(product, colorName, sizeName) {
+  const size = sizeName ? (product.sizes || []).find((s) => s.name === sizeName) : null;
+  if (size && size.price && size.price > 0) return size.price;
+  const color = colorName ? (product.colors || []).find((c) => c.name === colorName) : null;
   if (color && color.price && color.price > 0) return color.price;
   return product.price;
 }
@@ -618,7 +620,9 @@ function useProductVariant(product) {
   const hasSizes = (product.sizes || []).length > 0;
   const outOfStock = (hasColors && availableColors.length === 0) || (hasSizes && availableSizes.length === 0);
   const maxQty = Math.max(1, Math.min(selectedColor ? selectedColor.stock : Infinity, selectedSize ? selectedSize.stock : Infinity));
-  const effectivePrice = selectedColor && selectedColor.price > 0 ? selectedColor.price : product.price;
+  const sizePrice = selectedSize && selectedSize.price > 0 ? selectedSize.price : null;
+  const colorPrice = selectedColor && selectedColor.price > 0 ? selectedColor.price : null;
+  const effectivePrice = sizePrice ?? colorPrice ?? product.price;
 
   useEffect(() => {
     setQty(1);
@@ -819,7 +823,7 @@ function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
 function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, whatsapp, note, setNote, onSent, customerName }) {
   const total = cart.reduce((sum, item) => {
     const p = products.find((pr) => pr.id === item.productId);
-    return sum + (p ? getEffectivePrice(p, item.colorName) * item.qty : 0);
+    return sum + (p ? getEffectivePrice(p, item.colorName, item.sizeName) * item.qty : 0);
   }, 0);
 
   return (
@@ -886,7 +890,7 @@ function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, what
                         <button onClick={() => onQtyChange(idx, 1)} style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.text, cursor: "pointer", padding: "2px 6px" }}>
                           <Plus size={12} />
                         </button>
-                        <span style={{ marginLeft: "auto", fontSize: 13, color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(p, item.colorName) * item.qty)}</span>
+                        <span style={{ marginLeft: "auto", fontSize: 13, color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(p, item.colorName, item.sizeName) * item.qty)}</span>
                       </div>
                     </div>
                     <button onClick={() => onRemove(idx)} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", alignSelf: "flex-start" }}>
@@ -1741,13 +1745,13 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
   function updateSize(idx, field, value) {
     setForm((f) => {
       const sizes = [...f.sizes];
-      sizes[idx] = { ...sizes[idx], [field]: field === "stock" ? Number(value) : value };
+      sizes[idx] = { ...sizes[idx], [field]: field === "stock" || field === "price" ? Number(value) : value };
       return { ...f, sizes };
     });
   }
 
   function addSize() {
-    setForm((f) => ({ ...f, sizes: [...f.sizes, { name: "Novo tamanho", stock: 0 }] }));
+    setForm((f) => ({ ...f, sizes: [...f.sizes, { name: "Novo tamanho", stock: 0, price: 0 }] }));
   }
 
   function removeSize(idx) {
@@ -1963,7 +1967,10 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
               style={{ display: "block", marginTop: 4, width: 150, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
             />
           </label>
-          <label style={{ fontSize: 12, color: PALETTE.muted, display: "flex", alignItems: "center", gap: 6, marginTop: 20 }}>
+          <label
+            style={{ fontSize: 12, color: PALETTE.muted, display: "flex", alignItems: "center", gap: 6, marginTop: 20 }}
+            title='Adiciona o prefixo "a partir de" antes do preço deste produto no catálogo. O preço em si já muda sozinho para o valor da cor/tamanho escolhido pelo cliente, esteja esta opção marcada ou não.'
+          >
             <input type="checkbox" checked={form.priceFrom} onChange={(e) => updateField("priceFrom", e.target.checked)} />
             Mostrar "a partir de"
           </label>
@@ -2097,6 +2104,9 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
         <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
           <Ruler size={13} /> Tamanhos ou modelos (opcional)
         </div>
+        <p style={{ fontSize: 11, color: PALETTE.muted, marginTop: -2, marginBottom: 8, maxWidth: 480 }}>
+          Deixe o campo de preço em branco para usar o preço padrão do produto nesse tamanho. Quando o cliente escolher um tamanho com preço definido, o valor mostrado na página do produto muda automaticamente para esse preço — sem precisar editar o produto na mão. Ex: cadastre "5 unidades" com o preço daquele lote.
+        </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {form.sizes.map((s, idx) => (
             <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -2112,6 +2122,16 @@ function AdminProductForm({ product, categories, onSave, onCancel, onDelete }) {
                 onChange={(e) => updateSize(idx, "stock", e.target.value)}
                 placeholder="Estoque"
                 style={{ width: 90, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "6px 8px", fontSize: 13 }}
+              />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={s.price || ""}
+                onChange={(e) => updateSize(idx, "price", e.target.value === "" ? 0 : Number(e.target.value))}
+                placeholder="Preço padrão"
+                title="Preço específico deste tamanho (opcional) — deixe em branco para usar o preço do produto"
+                style={{ width: 100, background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "6px 8px", fontSize: 13 }}
               />
               <button onClick={() => removeSize(idx)} style={{ background: "transparent", border: "none", color: PALETTE.danger, cursor: "pointer" }}>
                 <Trash2 size={15} />
@@ -2233,7 +2253,7 @@ function AdminStockSales({ products, setProducts, sales, setSales }) {
       })
     );
 
-    const unitPrice = getEffectivePrice(saleProduct, hasColors ? saleColor : "");
+    const unitPrice = getEffectivePrice(saleProduct, hasColors ? saleColor : "", hasSizes ? saleSize : "");
     const entry = {
       id: uid(),
       date: new Date().toISOString(),
@@ -2338,7 +2358,7 @@ function AdminStockSales({ products, setProducts, sales, setSales }) {
           </label>
           {saleProduct && (
             <div style={{ fontSize: 13, color: PALETTE.muted, paddingBottom: 8 }}>
-              Total: <span style={{ color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(saleProduct, saleColor) * Math.max(1, Number(saleQty) || 1))}</span>
+              Total: <span style={{ color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(saleProduct, saleColor, saleSize) * Math.max(1, Number(saleQty) || 1))}</span>
             </div>
           )}
           <button
@@ -3852,7 +3872,7 @@ function AppInner() {
     try {
       const items = cartItems.map((item) => {
         const p = products.find((pr) => pr.id === item.productId);
-        return { productId: item.productId, name: p ? p.name : "", colorName: item.colorName, sizeName: item.sizeName, qty: item.qty, unitPrice: p ? getEffectivePrice(p, item.colorName) : 0 };
+        return { productId: item.productId, name: p ? p.name : "", colorName: item.colorName, sizeName: item.sizeName, qty: item.qty, unitPrice: p ? getEffectivePrice(p, item.colorName, item.sizeName) : 0 };
       });
       await supabase.from("orders").insert({ user_id: user.id, items, total, note: orderNote || null });
     } catch (e) {
@@ -4368,7 +4388,7 @@ function AppInner() {
               showToast("Pedido aberto no WhatsApp!");
               const total = cart.reduce((sum, item) => {
                 const p = products.find((pr) => pr.id === item.productId);
-                return sum + (p ? getEffectivePrice(p, item.colorName) * item.qty : 0);
+                return sum + (p ? getEffectivePrice(p, item.colorName, item.sizeName) * item.qty : 0);
               }, 0);
               saveOrderRecord(cart, total, note);
             }}
