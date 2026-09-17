@@ -11,7 +11,9 @@ function uid() {
   return "p" + Math.random().toString(36).slice(2, 9);
 }
 
-function buildWhatsAppMessage(cart, products, note, customerName) {
+const PAYMENT_METHOD_LABELS = { pix: "Pix", credito: "Cartão de crédito", dinheiro: "Dinheiro" };
+
+function buildWhatsAppMessage(cart, products, note, customerName, paymentMethod) {
   const lines = [
     customerName
       ? "Olá! Meu nome é " + customerName + ". Vim pelo site da Moldeq e gostaria de fazer o seguinte pedido:"
@@ -32,6 +34,9 @@ function buildWhatsAppMessage(cart, products, note, customerName) {
   });
   lines.push("");
   lines.push("Total: " + formatBRL(total));
+  if (paymentMethod) {
+    lines.push("Forma de pagamento: " + (PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod));
+  }
   if (note && note.trim()) {
     lines.push("");
     lines.push("Obs: " + note.trim());
@@ -820,11 +825,46 @@ function ProductCard({ product, onAddToCart, onOpenProduct, toast }) {
   );
 }
 
-function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, whatsapp, note, setNote, onSent, customerName }) {
+function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, whatsapp, note, setNote, onSent, defaultCustomerName }) {
   const total = cart.reduce((sum, item) => {
     const p = products.find((pr) => pr.id === item.productId);
     return sum + (p ? getEffectivePrice(p, item.colorName, item.sizeName) * item.qty : 0);
   }, 0);
+
+  const [checkoutStep, setCheckoutStep] = useState(false);
+  const [nameInput, setNameInput] = useState(defaultCustomerName || "");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [showValidation, setShowValidation] = useState(false);
+
+  useEffect(() => {
+    if (defaultCustomerName) setNameInput((n) => (n ? n : defaultCustomerName));
+  }, [defaultCustomerName]);
+
+  useEffect(() => {
+    if (!open) {
+      setCheckoutStep(false);
+      setShowValidation(false);
+    }
+  }, [open]);
+
+  const trimmedName = nameInput.trim();
+  const nameValid = trimmedName.split(/\s+/).filter(Boolean).length >= 2;
+  const checkoutValid = nameValid && !!paymentMethod;
+
+  function handleConfirm(e) {
+    if (!checkoutValid) {
+      e.preventDefault();
+      setShowValidation(true);
+      return;
+    }
+    onSent(trimmedName, paymentMethod);
+  }
+
+  const paymentOptions = [
+    { value: "pix", label: "Pix" },
+    { value: "credito", label: "Cartão de crédito" },
+    { value: "dinheiro", label: "Dinheiro" },
+  ];
 
   return (
     <>
@@ -857,94 +897,193 @@ function CartDrawer({ open, onClose, cart, products, onRemove, onQtyChange, what
         }}
       >
         <div style={{ padding: "20px 20px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid " + PALETTE.border }}>
-          <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, color: PALETTE.text }}>Seu carrinho</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {checkoutStep && (
+              <button onClick={() => setCheckoutStep(false)} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", padding: 0, display: "flex" }}>
+                <ChevronLeft size={20} />
+              </button>
+            )}
+            <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, color: PALETTE.text }}>
+              {checkoutStep ? "Finalizar pedido" : "Seu carrinho"}
+            </h2>
+          </div>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer" }}>
             <X size={20} />
           </button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-          {cart.length === 0 ? (
-            <p style={{ color: PALETTE.muted, fontSize: 14 }}>Seu carrinho está vazio. Adicione produtos do catálogo para montar seu pedido.</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {cart.map((item, idx) => {
-                const p = products.find((pr) => pr.id === item.productId);
-                if (!p) return null;
-                const thumb = (p.media && p.media[0] && p.media[0].url) || "";
-                return (
-                  <div key={idx} style={{ display: "flex", gap: 10, borderBottom: "1px solid " + PALETTE.border, paddingBottom: 14 }}>
-                    <img src={thumb} alt={p.name} style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, color: PALETTE.text, fontWeight: 600 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: PALETTE.muted, marginTop: 2 }}>
-                        {item.colorName ? "Cor: " + item.colorName : ""}
-                        {item.colorName && item.sizeName ? " · " : ""}
-                        {item.sizeName ? "Tamanho: " + item.sizeName : ""}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                        <button onClick={() => onQtyChange(idx, -1)} style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.text, cursor: "pointer", padding: "2px 6px" }}>
-                          <Minus size={12} />
-                        </button>
-                        <span style={{ fontSize: 13, color: PALETTE.text }}>{item.qty}</span>
-                        <button onClick={() => onQtyChange(idx, 1)} style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.text, cursor: "pointer", padding: "2px 6px" }}>
-                          <Plus size={12} />
-                        </button>
-                        <span style={{ marginLeft: "auto", fontSize: 13, color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(p, item.colorName, item.sizeName) * item.qty)}</span>
-                      </div>
-                    </div>
-                    <button onClick={() => onRemove(idx)} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", alignSelf: "flex-start" }}>
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        {checkoutStep ? (
+          <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+            <p style={{ fontSize: 13, color: PALETTE.muted, margin: 0 }}>
+              Antes de abrir o WhatsApp, confirme seu nome completo e a forma de pagamento para agilizar seu atendimento.
+            </p>
+            <label style={{ fontSize: 12, color: PALETTE.muted }}>
+              Nome completo
+              <input
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Ex: Maria Oliveira"
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  width: "100%",
+                  background: PALETTE.surface,
+                  border: "1px solid " + (showValidation && !nameValid ? PALETTE.danger : PALETTE.border),
+                  borderRadius: 8,
+                  color: PALETTE.text,
+                  padding: "10px 12px",
+                  fontSize: 14,
+                  boxSizing: "border-box",
+                }}
+              />
+            </label>
+            {showValidation && !nameValid && (
+              <p style={{ fontSize: 12, color: PALETTE.danger, margin: "-10px 0 0" }}>Digite seu nome completo (nome e sobrenome).</p>
+            )}
 
-        {cart.length > 0 && (
-          <div style={{ padding: 20, borderTop: "1px solid " + PALETTE.border, display: "flex", flexDirection: "column", gap: 12 }}>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Observações (opcional): endereço, prazo, personalização..."
-              rows={2}
-              style={{
-                width: "100%",
-                background: PALETTE.surface,
-                border: "1px solid " + PALETTE.border,
-                borderRadius: 8,
-                color: PALETTE.text,
-                padding: 10,
-                fontSize: 13,
-                resize: "vertical",
-                fontFamily: "inherit",
-                boxSizing: "border-box",
-              }}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: PALETTE.text }}>
+            <div>
+              <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 6 }}>Forma de pagamento</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {paymentOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPaymentMethod(opt.value)}
+                    style={{
+                      background: paymentMethod === opt.value ? PALETTE.goldBright : PALETTE.surface,
+                      color: paymentMethod === opt.value ? "#0A2E1A" : PALETTE.text,
+                      border: "1px solid " + (paymentMethod === opt.value ? PALETTE.goldBright : PALETTE.border),
+                      borderRadius: 20,
+                      padding: "8px 14px",
+                      fontSize: 13,
+                      fontWeight: paymentMethod === opt.value ? 700 : 400,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {showValidation && !paymentMethod && (
+                <p style={{ fontSize: 12, color: PALETTE.danger, margin: "8px 0 0" }}>Escolha uma forma de pagamento.</p>
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: PALETTE.text, marginTop: 4 }}>
               <span>Total</span>
               <span style={{ fontWeight: 700, color: PALETTE.goldBright }}>{formatBRL(total)}</span>
             </div>
-            <a
-              href={"https://wa.me/" + whatsapp + "?text=" + encodeURIComponent(buildWhatsAppMessage(cart, products, note, customerName))}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={onSent}
-              style={{
-                textDecoration: "none",
-                textAlign: "center",
-                background: "#25D366",
-                color: "#0A2E1A",
-                fontWeight: 700,
-                padding: "13px 16px",
-                borderRadius: 10,
-                fontSize: 14,
-              }}
-            >
-              Finalizar pedido no WhatsApp
-            </a>
+          </div>
+        ) : (
+          <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+            {cart.length === 0 ? (
+              <p style={{ color: PALETTE.muted, fontSize: 14 }}>Seu carrinho está vazio. Adicione produtos do catálogo para montar seu pedido.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {cart.map((item, idx) => {
+                  const p = products.find((pr) => pr.id === item.productId);
+                  if (!p) return null;
+                  const thumb = (p.media && p.media[0] && p.media[0].url) || "";
+                  return (
+                    <div key={idx} style={{ display: "flex", gap: 10, borderBottom: "1px solid " + PALETTE.border, paddingBottom: 14 }}>
+                      <img src={thumb} alt={p.name} style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, color: PALETTE.text, fontWeight: 600 }}>{p.name}</div>
+                        <div style={{ fontSize: 12, color: PALETTE.muted, marginTop: 2 }}>
+                          {item.colorName ? "Cor: " + item.colorName : ""}
+                          {item.colorName && item.sizeName ? " · " : ""}
+                          {item.sizeName ? "Tamanho: " + item.sizeName : ""}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                          <button onClick={() => onQtyChange(idx, -1)} style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.text, cursor: "pointer", padding: "2px 6px" }}>
+                            <Minus size={12} />
+                          </button>
+                          <span style={{ fontSize: 13, color: PALETTE.text }}>{item.qty}</span>
+                          <button onClick={() => onQtyChange(idx, 1)} style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 6, color: PALETTE.text, cursor: "pointer", padding: "2px 6px" }}>
+                            <Plus size={12} />
+                          </button>
+                          <span style={{ marginLeft: "auto", fontSize: 13, color: PALETTE.goldBright, fontWeight: 700 }}>{formatBRL(getEffectivePrice(p, item.colorName, item.sizeName) * item.qty)}</span>
+                        </div>
+                      </div>
+                      <button onClick={() => onRemove(idx)} style={{ background: "transparent", border: "none", color: PALETTE.muted, cursor: "pointer", alignSelf: "flex-start" }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {cart.length > 0 && (
+          <div style={{ padding: 20, borderTop: "1px solid " + PALETTE.border, display: "flex", flexDirection: "column", gap: 12 }}>
+            {!checkoutStep && (
+              <>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Observações (opcional): endereço, prazo, personalização..."
+                  rows={2}
+                  style={{
+                    width: "100%",
+                    background: PALETTE.surface,
+                    border: "1px solid " + PALETTE.border,
+                    borderRadius: 8,
+                    color: PALETTE.text,
+                    padding: 10,
+                    fontSize: 13,
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, color: PALETTE.text }}>
+                  <span>Total</span>
+                  <span style={{ fontWeight: 700, color: PALETTE.goldBright }}>{formatBRL(total)}</span>
+                </div>
+              </>
+            )}
+            {checkoutStep ? (
+              <a
+                href={checkoutValid ? "https://wa.me/" + whatsapp + "?text=" + encodeURIComponent(buildWhatsAppMessage(cart, products, note, trimmedName, paymentMethod)) : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleConfirm}
+                style={{
+                  textDecoration: "none",
+                  textAlign: "center",
+                  background: "#25D366",
+                  color: "#0A2E1A",
+                  fontWeight: 700,
+                  padding: "13px 16px",
+                  borderRadius: 10,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Confirmar e abrir WhatsApp
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCheckoutStep(true)}
+                style={{
+                  border: "none",
+                  textAlign: "center",
+                  background: "#25D366",
+                  color: "#0A2E1A",
+                  fontWeight: 700,
+                  padding: "13px 16px",
+                  borderRadius: 10,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Finalizar pedido no WhatsApp
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1462,7 +1601,12 @@ function OrdersPage({ user, onBack }) {
                   </div>
                 ))}
               </div>
-              {o.note && <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 8, marginBottom: 0 }}>Obs: {o.note}</p>}
+              {o.payment_method && (
+                <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 8, marginBottom: 0 }}>
+                  Pagamento: {PAYMENT_METHOD_LABELS[o.payment_method] || o.payment_method}
+                </p>
+              )}
+              {o.note && <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 4, marginBottom: 0 }}>Obs: {o.note}</p>}
             </div>
           ))}
         </div>
@@ -3335,6 +3479,170 @@ function AdminPricingCalculator({ products, setProducts, pricingSettings, setPri
   );
 }
 
+// Preço mais caro que o produto já oferece hoje (preço padrão ou alguma cor
+// com preço específico), sem contar a própria cor promocional do mês — assim
+// reaplicar o "cor do mês" com um desconto novo não fica compondo em cima do
+// preço promocional do mês anterior.
+function highestNonPromoColorPrice(product) {
+  const others = (product.colors || []).filter((c) => !c.isPromo);
+  const prices = [product.price, ...others.map((c) => (c.price && c.price > 0 ? c.price : product.price))];
+  return Math.max(...prices);
+}
+
+function AdminMonthlyPromo({ products, setProducts }) {
+  const [colorName, setColorName] = useState("");
+  const [colorHex, setColorHex] = useState("#D9A44C");
+  const [discountPercent, setDiscountPercent] = useState(20);
+  const [defaultStock, setDefaultStock] = useState(10);
+  const [applyMsg, setApplyMsg] = useState("");
+
+  const productsWithPromo = products.filter((p) => (p.colors || []).some((c) => c.isPromo));
+  const activePromoColor = productsWithPromo.length > 0 ? productsWithPromo[0].colors.find((c) => c.isPromo) : null;
+
+  const discount = Math.max(0, Math.min(99, Number(discountPercent) || 0));
+
+  function applyMonthlyPromo() {
+    const trimmedName = colorName.trim();
+    if (!trimmedName) {
+      setApplyMsg("Digite um nome para a cor do mês.");
+      return;
+    }
+    if (discount <= 0) {
+      setApplyMsg("O desconto precisa ser maior que 0%.");
+      return;
+    }
+    setProducts((prev) =>
+      prev.map((p) => {
+        const others = (p.colors || []).filter((c) => !c.isPromo);
+        const highest = highestNonPromoColorPrice(p);
+        const promoPrice = Math.round(highest * (1 - discount / 100) * 100) / 100;
+        const promoColor = {
+          name: trimmedName,
+          hex: colorHex,
+          stock: Math.max(0, Number(defaultStock) || 0),
+          price: promoPrice,
+          image: null,
+          isPromo: true,
+          promoDiscountPercent: discount,
+        };
+        return { ...p, colors: [...others, promoColor] };
+      })
+    );
+    setApplyMsg("Cor \"" + trimmedName + "\" com " + discount + "% de desconto aplicada em " + products.length + " produto(s).");
+    setTimeout(() => setApplyMsg(""), 4500);
+  }
+
+  function removeMonthlyPromo() {
+    if (!window.confirm("Remover a cor promocional de todos os produtos? Isso não pode ser desfeito.")) return;
+    setProducts((prev) => prev.map((p) => ({ ...p, colors: (p.colors || []).filter((c) => !c.isPromo) })));
+    setApplyMsg("Cor promocional removida de todos os produtos.");
+    setTimeout(() => setApplyMsg(""), 3500);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Sparkles size={16} color={PALETTE.gold} />
+          <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Cor do mês</h3>
+        </div>
+        <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 0, marginBottom: 16, maxWidth: 560 }}>
+          Escolha uma cor e um desconto. Ao aplicar, essa cor é adicionada de uma vez em todos os produtos, com um preço promocional calculado sobre o preço mais caro que cada produto já tem hoje
+          (o preço padrão ou o de alguma cor específica — o que for maior). Aplicar de novo com uma cor nova substitui a cor promocional anterior em todos os produtos, sem duplicar.
+        </p>
+
+        {activePromoColor && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(217,164,76,0.08)", border: "1px solid " + PALETTE.border, borderRadius: 10, padding: 12, marginBottom: 16, flexWrap: "wrap" }}>
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: activePromoColor.hex, border: "1px solid " + PALETTE.border, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: PALETTE.text }}>
+              Promoção ativa agora: <strong>{activePromoColor.name}</strong>
+              {activePromoColor.promoDiscountPercent ? " — " + activePromoColor.promoDiscountPercent + "% de desconto" : ""} em {productsWithPromo.length} de {products.length} produto(s).
+            </span>
+            <button
+              type="button"
+              onClick={removeMonthlyPromo}
+              style={{ marginLeft: "auto", background: "transparent", border: "1px solid " + PALETTE.danger, color: PALETTE.danger, borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}
+            >
+              Remover promoção
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Cor
+            <input
+              type="color"
+              value={colorHex}
+              onChange={(e) => setColorHex(e.target.value)}
+              style={{ display: "block", marginTop: 4, width: 44, height: 38, border: "none", background: "none", padding: 0, cursor: "pointer" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Nome da cor do mês
+            <input
+              value={colorName}
+              onChange={(e) => setColorName(e.target.value)}
+              placeholder="Ex: Dourado de Outubro"
+              style={{ display: "block", marginTop: 4, width: 200, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Desconto sobre o preço mais caro (%)
+            <input
+              type="number"
+              min="1"
+              max="99"
+              value={discountPercent}
+              onChange={(e) => setDiscountPercent(e.target.value)}
+              style={{ display: "block", marginTop: 4, width: 130, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Estoque inicial (por produto)
+            <input
+              type="number"
+              min="0"
+              value={defaultStock}
+              onChange={(e) => setDefaultStock(e.target.value)}
+              style={{ display: "block", marginTop: 4, width: 130, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <button
+            onClick={applyMonthlyPromo}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            <Check size={14} /> Aplicar a todos os produtos
+          </button>
+        </div>
+        {applyMsg && <p style={{ fontSize: 12, color: PALETTE.gold, marginTop: 12 }}>{applyMsg}</p>}
+      </div>
+
+      {colorName.trim() && discount > 0 && (
+        <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18 }}>
+          <h3 style={{ margin: "0 0 12px", fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>
+            Prévia — como ficaria em cada produto
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
+            {products.map((p) => {
+              const highest = highestNonPromoColorPrice(p);
+              const promoPrice = Math.round(highest * (1 - discount / 100) * 100) / 100;
+              return (
+                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, padding: "6px 0", borderBottom: "1px solid " + PALETTE.border }}>
+                  <span style={{ color: PALETTE.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                  <span style={{ color: PALETTE.muted, flexShrink: 0 }}>
+                    {formatBRL(highest)} <ChevronRight size={11} style={{ verticalAlign: "middle" }} /> <strong style={{ color: PALETTE.goldBright }}>{formatBRL(promoPrice)}</strong>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminPanel({
   products,
   setProducts,
@@ -3629,6 +3937,24 @@ function AdminPanel({
         >
           <Calculator size={14} /> Precificação
         </button>
+        <button
+          onClick={() => setTab("promo")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "transparent",
+            border: "none",
+            borderBottom: tab === "promo" ? "2px solid " + PALETTE.gold : "2px solid transparent",
+            color: tab === "promo" ? PALETTE.text : PALETTE.muted,
+            padding: "10px 6px",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <Sparkles size={14} /> Cor do mês
+        </button>
       </div>
 
       {tab === "products" ? (
@@ -3701,8 +4027,10 @@ function AdminPanel({
           <AdminCategories categories={categories} setCategories={setCategories} products={products} homeItemsPerSection={homeItemsPerSection} setHomeItemsPerSection={setHomeItemsPerSection} />
           <AdminHeroText heroContent={heroContent} setHeroContent={setHeroContent} />
         </>
-      ) : (
+      ) : tab === "pricing" ? (
         <AdminPricingCalculator products={products} setProducts={setProducts} pricingSettings={pricingSettings} setPricingSettings={setPricingSettings} />
+      ) : (
+        <AdminMonthlyPromo products={products} setProducts={setProducts} />
       )}
     </div>
   );
@@ -3867,14 +4195,21 @@ function AppInner() {
     if (view === "orders") setView("shop");
   }
 
-  async function saveOrderRecord(cartItems, total, orderNote) {
+  async function saveOrderRecord(cartItems, total, orderNote, customerName, paymentMethod) {
     if (!user) return;
     try {
       const items = cartItems.map((item) => {
         const p = products.find((pr) => pr.id === item.productId);
         return { productId: item.productId, name: p ? p.name : "", colorName: item.colorName, sizeName: item.sizeName, qty: item.qty, unitPrice: p ? getEffectivePrice(p, item.colorName, item.sizeName) : 0 };
       });
-      await supabase.from("orders").insert({ user_id: user.id, items, total, note: orderNote || null });
+      await supabase.from("orders").insert({
+        user_id: user.id,
+        items,
+        total,
+        note: orderNote || null,
+        customer_name: customerName || null,
+        payment_method: paymentMethod || null,
+      });
     } catch (e) {
       console.error("Erro ao salvar histórico de pedido:", e);
     }
@@ -4383,14 +4718,14 @@ function AppInner() {
             whatsapp={whatsapp}
             note={note}
             setNote={setNote}
-            customerName={profile && profile.name ? profile.name : ""}
-            onSent={() => {
+            defaultCustomerName={profile && profile.name ? profile.name : ""}
+            onSent={(customerName, paymentMethod) => {
               showToast("Pedido aberto no WhatsApp!");
               const total = cart.reduce((sum, item) => {
                 const p = products.find((pr) => pr.id === item.productId);
                 return sum + (p ? getEffectivePrice(p, item.colorName, item.sizeName) * item.qty : 0);
               }, 0);
-              saveOrderRecord(cart, total, note);
+              saveOrderRecord(cart, total, note, customerName, paymentMethod);
             }}
           />
 
