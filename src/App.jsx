@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, Component } from "react";
-import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles, DollarSign, Percent, Gift, ThumbsUp, Phone, MapPin, Share2 } from "lucide-react";
+import { ShoppingCart, X, Plus, Minus, Trash2, Pencil, Lock, ImagePlus, Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Search, Settings, PackagePlus, Film, Ruler, TrendingUp, Package, ClipboardList, Megaphone, Image as ImageIcon, Star, Truck, ShieldCheck, MessageCircle, Award, Clock, Calculator, Info, User, LogOut, Eye, EyeOff, PackageCheck, LayoutGrid, Sparkles, DollarSign, Percent, Gift, ThumbsUp, Phone, MapPin, Share2, Palette } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { INITIAL_PRODUCTS, LOGO_URI, PATTERN_URI, INITIAL_BANNERS, INITIAL_BENEFITS, INITIAL_CATEGORIES, INITIAL_HERO_CONTENT, INITIAL_PRICING_SETTINGS, DEFAULT_WHATSAPP, ADMIN_ACCESS_KEY } from "./data";
 
@@ -373,6 +373,128 @@ function ColorSwatch({ color, selected, onClick, disabled }) {
         </span>
       )}
     </button>
+  );
+}
+
+function ColorThumb({ color, size }) {
+  if (color && color.image) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "1px solid " + PALETTE.border }}>
+        <img src={color.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: color ? color.hex : "#333",
+        flexShrink: 0,
+        border: "1px solid " + PALETTE.border,
+      }}
+    />
+  );
+}
+
+// Seletor de cor em estilo "combobox" (caixa com miniatura + nome + seta,
+// que abre uma lista rolável) — pensado pra lojas com muitas cores
+// cadastradas, onde uma fileira de bolinhas fica grande demais pra caber.
+function ColorDropdown({ colors, colorName, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const selected = colors.find((c) => c.name === colorName) || colors[0];
+
+  return (
+    <div style={{ position: "relative", maxWidth: 320 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          width: "100%",
+          background: PALETTE.surface,
+          border: "1px solid " + (open ? PALETTE.goldBright : PALETTE.border),
+          borderRadius: 10,
+          padding: "8px 12px",
+          cursor: "pointer",
+          boxSizing: "border-box",
+        }}
+      >
+        <ColorThumb color={selected} size={30} />
+        <span
+          style={{
+            flex: 1,
+            textAlign: "left",
+            fontSize: 14,
+            color: PALETTE.text,
+            fontWeight: 600,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {selected ? selected.name : ""}
+        </span>
+        {open ? <ChevronUp size={16} color={PALETTE.muted} /> : <ChevronDown size={16} color={PALETTE.muted} />}
+      </button>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              left: 0,
+              right: 0,
+              maxHeight: 260,
+              overflowY: "auto",
+              background: PALETTE.bg2,
+              border: "1px solid " + PALETTE.border,
+              borderRadius: 10,
+              boxShadow: "0 12px 30px rgba(0,0,0,0.45)",
+              zIndex: 30,
+            }}
+          >
+            {colors.map((c) => {
+              const isSelected = c.name === colorName;
+              const disabled = c.stock <= 0;
+              return (
+                <button
+                  key={c.name}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    onSelect(c.name);
+                    setOpen(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    background: isSelected ? "rgba(217,164,76,0.12)" : "transparent",
+                    border: "none",
+                    borderLeft: "3px solid " + (isSelected ? PALETTE.goldBright : "transparent"),
+                    padding: "9px 11px",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    opacity: disabled ? 0.45 : 1,
+                    textAlign: "left",
+                  }}
+                >
+                  <ColorThumb color={c} size={26} />
+                  <span style={{ fontSize: 13, color: PALETTE.text, fontWeight: isSelected ? 700 : 400, flex: 1 }}>{c.name}</span>
+                  {disabled && <span style={{ fontSize: 11, color: PALETTE.muted, flexShrink: 0 }}>esgotado</span>}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1698,11 +1820,7 @@ function ProductDetailPage({ product, allProducts, onAddToCart, onBack, onOpenPr
               <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 8 }}>
                 Cor: <span style={{ color: PALETTE.text, fontWeight: 600 }}>{colorName}</span>
               </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {product.colors.map((c) => (
-                  <ColorSwatch key={c.name} color={c} selected={colorName === c.name} disabled={c.stock <= 0} onClick={() => setColorName(c.name)} />
-                ))}
-              </div>
+              <ColorDropdown colors={product.colors} colorName={colorName} onSelect={setColorName} />
             </div>
           )}
 
@@ -3489,7 +3607,61 @@ function highestNonPromoColorPrice(product) {
   return Math.max(...prices);
 }
 
-function AdminMonthlyPromo({ products, setProducts }) {
+// Cores da paleta que um produto ainda não tem (comparando pelo nome, sem
+// diferenciar maiúsculas/espaços nas pontas) — usado tanto pra mostrar a
+// prévia de quantas cores serão adicionadas quanto pra aplicar de fato.
+function missingPaletteColors(product, palette) {
+  const existing = new Set((product.colors || []).map((c) => c.name.trim().toLowerCase()));
+  return palette.filter((pc) => pc.name.trim() && !existing.has(pc.name.trim().toLowerCase()));
+}
+
+function AdminColorTools({ products, setProducts, colorPalette, setColorPalette }) {
+  const [paletteStock, setPaletteStock] = useState(10);
+  const [paletteMsg, setPaletteMsg] = useState("");
+
+  function updatePaletteColor(idx, field, value) {
+    setColorPalette((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
+  }
+
+  function addPaletteColor() {
+    setColorPalette((prev) => [...prev, { name: "", hex: "#D9A44C" }]);
+  }
+
+  function removePaletteColor(idx) {
+    setColorPalette((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  const pendingAdds = products.map((p) => ({ id: p.id, missing: missingPaletteColors(p, colorPalette) }));
+  const productsToUpdate = pendingAdds.filter((x) => x.missing.length > 0).length;
+  const totalToAdd = pendingAdds.reduce((s, x) => s + x.missing.length, 0);
+
+  function applyPaletteToAllProducts() {
+    const validPalette = colorPalette.filter((c) => c.name.trim());
+    if (validPalette.length === 0) {
+      setPaletteMsg("Cadastre ao menos uma cor com nome na paleta antes de aplicar.");
+      return;
+    }
+    if (totalToAdd === 0) {
+      setPaletteMsg("Todos os produtos já têm todas as cores da paleta — nada para adicionar.");
+      return;
+    }
+    const stock = Math.max(0, Number(paletteStock) || 0);
+    setProducts((prev) =>
+      prev.map((p) => {
+        const missing = missingPaletteColors(p, validPalette);
+        if (missing.length === 0) return p;
+        const newColors = missing.map((pc) => ({ name: pc.name.trim(), hex: pc.hex, stock, price: 0, image: null }));
+        return { ...p, colors: [...(p.colors || []), ...newColors] };
+      })
+    );
+    setPaletteMsg(totalToAdd + " cor(es) adicionada(s) em " + productsToUpdate + " produto(s).");
+    setTimeout(() => setPaletteMsg(""), 4500);
+  }
+
   const [colorName, setColorName] = useState("");
   const [colorHex, setColorHex] = useState("#D9A44C");
   const [discountPercent, setDiscountPercent] = useState(20);
@@ -3541,6 +3713,75 @@ function AdminMonthlyPromo({ products, setProducts }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Palette size={16} color={PALETTE.gold} />
+          <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, color: PALETTE.text }}>Paleta de cores da loja</h3>
+        </div>
+        <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 0, marginBottom: 16, maxWidth: 560 }}>
+          Cadastre aqui, uma única vez, todas as cores que você trabalha (nome + cor). Depois, com um clique, adicione as que faltarem em todos os produtos de uma vez — cores que um produto já tem
+          não são duplicadas nem alteradas.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {colorPalette.map((c, idx) => (
+            <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <input
+                type="color"
+                value={c.hex}
+                onChange={(e) => updatePaletteColor(idx, "hex", e.target.value)}
+                style={{ width: 32, height: 32, border: "none", background: "none", padding: 0, cursor: "pointer" }}
+              />
+              <input
+                value={c.name}
+                onChange={(e) => updatePaletteColor(idx, "name", e.target.value)}
+                placeholder="Nome da cor"
+                style={{ width: 180, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "6px 8px", fontSize: 13 }}
+              />
+              <button onClick={() => removePaletteColor(idx)} style={{ background: "transparent", border: "none", color: PALETTE.danger, cursor: "pointer" }}>
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={addPaletteColor}
+            style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, background: "transparent", border: "1px dashed " + PALETTE.border, color: PALETTE.muted, borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: "pointer" }}
+          >
+            <Plus size={13} /> Adicionar cor à paleta
+          </button>
+          {colorPalette.length === 0 && (
+            <p style={{ fontSize: 11, color: PALETTE.muted, margin: 0 }}>Nenhuma cor cadastrada ainda.</p>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ fontSize: 12, color: PALETTE.muted }}>
+            Estoque inicial (por produto, só para cores novas)
+            <input
+              type="number"
+              min="0"
+              value={paletteStock}
+              onChange={(e) => setPaletteStock(e.target.value)}
+              style={{ display: "block", marginTop: 4, width: 200, background: PALETTE.surface2, border: "1px solid " + PALETTE.border, borderRadius: 8, color: PALETTE.text, padding: "8px 10px", fontSize: 14, boxSizing: "border-box" }}
+            />
+          </label>
+          <button
+            onClick={applyPaletteToAllProducts}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: PALETTE.gold, color: "#1A1204", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            <Check size={14} /> Adicionar cores que faltam em todos os produtos
+          </button>
+        </div>
+        {colorPalette.length > 0 && (
+          <p style={{ fontSize: 12, color: PALETTE.muted, marginTop: 10 }}>
+            {totalToAdd === 0
+              ? "Todos os produtos já têm todas as cores da paleta."
+              : totalToAdd + " cor(es) a adicionar em " + productsToUpdate + " de " + products.length + " produto(s)."}
+          </p>
+        )}
+        {paletteMsg && <p style={{ fontSize: 12, color: PALETTE.gold, marginTop: 6 }}>{paletteMsg}</p>}
+      </div>
+
       <div style={{ background: PALETTE.surface, border: "1px solid " + PALETTE.border, borderRadius: 12, padding: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <Sparkles size={16} color={PALETTE.gold} />
@@ -3662,6 +3903,8 @@ function AdminPanel({
   setHeroContent,
   pricingSettings,
   setPricingSettings,
+  colorPalette,
+  setColorPalette,
   saveStatus,
   saveErrorDetail,
   onRetrySave,
@@ -3953,7 +4196,7 @@ function AdminPanel({
             cursor: "pointer",
           }}
         >
-          <Sparkles size={14} /> Cor do mês
+          <Sparkles size={14} /> Cores
         </button>
       </div>
 
@@ -4030,7 +4273,7 @@ function AdminPanel({
       ) : tab === "pricing" ? (
         <AdminPricingCalculator products={products} setProducts={setProducts} pricingSettings={pricingSettings} setPricingSettings={setPricingSettings} />
       ) : (
-        <AdminMonthlyPromo products={products} setProducts={setProducts} />
+        <AdminColorTools products={products} setProducts={setProducts} colorPalette={colorPalette} setColorPalette={setColorPalette} />
       )}
     </div>
   );
@@ -4104,6 +4347,11 @@ function AppInner() {
   const [homeItemsPerSection, setHomeItemsPerSection] = useState(8);
   const [heroContent, setHeroContent] = useState(INITIAL_HERO_CONTENT);
   const [pricingSettings, setPricingSettings] = useState(INITIAL_PRICING_SETTINGS);
+  // Paleta de cores reutilizável da loja (ver AdminColorPalette): uma lista
+  // única de cores (nome + hex + foto opcional) que o vendedor cadastra uma
+  // vez e depois aplica em massa a todos os produtos, em vez de digitar a
+  // mesma cor manualmente em cada produto.
+  const [colorPalette, setColorPalette] = useState([]);
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -4238,6 +4486,7 @@ function AppInner() {
           setCategories(data.categories || INITIAL_CATEGORIES);
           setHomeItemsPerSection(data.homeItemsPerSection || 8);
           setHeroContent({ ...INITIAL_HERO_CONTENT, ...(data.heroContent || {}) });
+          setColorPalette(data.colorPalette || []);
 
           if (hasLegacyBase64Images(loadedProducts, loadedBanners)) {
             setMigrating(true);
@@ -4285,7 +4534,7 @@ function AppInner() {
   }
 
   const latestPayloadRef = useRef(null);
-  latestPayloadRef.current = { products, whatsapp, sales, banners, benefits, categories, homeItemsPerSection, heroContent, pricingSettings };
+  latestPayloadRef.current = { products, whatsapp, sales, banners, benefits, categories, homeItemsPerSection, heroContent, pricingSettings, colorPalette };
 
   async function persistCatalog() {
     if (loadError) return;
@@ -4364,7 +4613,7 @@ function AppInner() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [products, whatsapp, sales, banners, benefits, categories, homeItemsPerSection, heroContent, pricingSettings, loading, migrating, loadError]);
+  }, [products, whatsapp, sales, banners, benefits, categories, homeItemsPerSection, heroContent, pricingSettings, colorPalette, loading, migrating, loadError]);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -4597,6 +4846,8 @@ function AppInner() {
           setHeroContent={setHeroContent}
           pricingSettings={pricingSettings}
           setPricingSettings={setPricingSettings}
+          colorPalette={colorPalette}
+          setColorPalette={setColorPalette}
           saveStatus={saveStatus}
           saveErrorDetail={saveErrorDetail}
           onRetrySave={runQueuedSave}
